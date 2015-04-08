@@ -75,7 +75,7 @@ func NewWindowFormatter() *WindowFormatter {
 	if info.User == "root" {
 		infoWidget.Border.FgColor = ui.ColorRed
 		infoWidget.TextFgColor = ui.ColorRed
-		infoWidget.TextBgColor = ui.ColorWhite
+		infoWidget.Border.LabelFgColor = ui.ColorRed
 	} else {
 		infoWidget.Border.FgColor = ui.ColorCyan
 		infoWidget.TextFgColor = ui.ColorGreen

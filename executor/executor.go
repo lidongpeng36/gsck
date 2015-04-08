@@ -248,11 +248,6 @@ func (exec *Executor) Check() []error {
 
 // Run will initialize and drive worker and send output to Formatter(s)
 func (exec *Executor) Run() (err error) {
-	if exec.worker == nil {
-		err = errors.New("No Execute Method Set.")
-		return
-	}
-
 	// Adjust concurrency
 	con := exec.Concurrency
 	count := int64(exec.HostCount())
@@ -266,11 +261,6 @@ func (exec *Executor) Run() (err error) {
 	}
 	exec.Concurrency = con
 
-	// get worker to work and redirect his output to formatter
-	err = exec.worker.Init()
-	if err != nil {
-		return
-	}
 	done := make(chan bool, 1)
 	go func() {
 		for {
@@ -285,13 +275,28 @@ func (exec *Executor) Run() (err error) {
 				for _, fmt := range exec.formatters {
 					fmt.Print()
 				}
+				close(outputChannel)
+				close(finishChannel)
 				done <- true
 			}
 		}
 	}()
+
+	if exec.worker == nil {
+		err = errors.New("No Execute Method Set.")
+		Finish()
+		<-done
+		return
+	}
+
+	// get worker to work and redirect its output to formatter
+	err = exec.worker.Init()
+	if err != nil {
+		Finish()
+		<-done
+		return
+	}
 	err = exec.worker.Execute()
 	<-done
-	close(outputChannel)
-	close(finishChannel)
 	return
 }

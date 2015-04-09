@@ -41,20 +41,21 @@ func NewAnsiFormatter() *AnsiFormatter {
 }
 
 func (af *AnsiFormatter) generateHeader(hostname string) (header string) {
-	fill := 60
+	fill := 72
 	digits := len(strconv.FormatInt(af.length(), 10))
 	formatStr := fmt.Sprintf("%%%dd / %%%dd : ", digits, digits)
 	header += fmt.Sprintf(formatStr, af.index, af.count)
-	fill -= len(header)
-	symCount := (fill - len(hostname) - 2) / 2
+	fillLeft := fill - len(header)
+	headerText := info.User + "@" + hostname
+	symCount := (fillLeft - len(headerText) - 2) / 2
 	var left, right string
 	for i := 0; i < symCount; i++ {
 		left += "="
 		right += "="
 	}
-	header += left + " " + hostname + " " + right
-	if len(header) > 59 {
-		header = header[0:59]
+	header += left + " " + headerText + " " + right
+	if len(header) > fill-1 {
+		header = header[0 : fill-1]
 	}
 	return
 }

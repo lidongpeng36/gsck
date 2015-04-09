@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const usage = "C-c/q:QUIT; j:DOWN; k:UP; C-u: PageUp; C-d: PageDown; G: EOF"
+
 // WindowFormatter shows Outputs with termui
 type WindowFormatter struct {
 	widgets       map[string]ui.GridBufferer
@@ -17,7 +19,6 @@ type WindowFormatter struct {
 	machineCount  int
 	headerYShift  int
 	event         chan tm.Event
-	list          []string
 	progress      float64
 	step          float64
 	selectedIndex int
@@ -36,7 +37,6 @@ func NewWindowFormatter() *WindowFormatter {
 		machineOutput: make([]*Output, 0, count),
 		machineCount:  count,
 		event:         make(chan tm.Event),
-		list:          make([]string, 0, count),
 		progress:      0,
 		step:          100 / float64(count),
 		selectedIndex: 0,
@@ -51,7 +51,7 @@ func NewWindowFormatter() *WindowFormatter {
 
 	// Footer
 	// help Box
-	helpWidget := ui.NewPar("q:QUIT; j:DOWN; k:UP")
+	helpWidget := ui.NewPar(usage)
 	helpWidget.Height = 3
 	helpWidget.Border.Label = "HELP"
 	helpWidget.Border.FgColor = ui.ColorCyan
@@ -138,30 +138,71 @@ func NewWindowFormatter() *WindowFormatter {
 	return wf
 }
 
+const (
+	arrowUp = iota
+	arrowDown
+)
+
+type direction int
+
+func (wf *WindowFormatter) indexCalc(direction direction, step int) int {
+	if direction == arrowUp {
+		step = -step
+	}
+	return wf.selectedIndex + step
+}
+
+func (wf *WindowFormatter) arrowMove(direction direction, step int) {
+	newIndex := wf.indexCalc(direction, step)
+	if newIndex < 0 {
+		newIndex = 0
+	}
+	if newIndex >= wf.machineCount {
+		newIndex = wf.machineCount - 1
+	}
+	if newIndex != wf.selectedIndex {
+		wf.selectedIndex = newIndex
+		wf.selectItem(wf.selectedIndex)
+	}
+}
+
+func (wf *WindowFormatter) arrowCircularMove(direction direction, step int) {
+	newIndex := wf.indexCalc(direction, step)
+	wf.selectedIndex = (wf.machineCount + newIndex) % wf.machineCount
+	wf.selectItem(wf.selectedIndex)
+}
+
 // run starts UI.
 func (wf *WindowFormatter) run() {
+	quit := func() {
+		wf.terminate()
+		os.Exit(2)
+	}
 	for {
 		select {
 		case e := <-wf.event:
 			if e.Type == tm.EventResize {
 				wf.updateMain()
-				wf.refresh()
+				wf.selectItem(wf.selectedIndex)
 			} else if e.Type == tm.EventKey {
-				switch e.Ch {
-				case 'q':
-					wf.terminate()
-					os.Exit(2)
-				case 'j':
-					wf.selectedIndex = (wf.selectedIndex + 1) % len(wf.machineWidets)
-					wf.selectItem(wf.selectedIndex)
-				case 'k':
-					machineCount := len(wf.machineWidets)
-					if wf.selectedIndex == 0 {
-						wf.selectedIndex = machineCount - 1
-					} else {
-						wf.selectedIndex = (wf.selectedIndex - 1) % machineCount
+				switch e.Key {
+				case tm.KeyCtrlC:
+					quit()
+				case tm.KeyCtrlU:
+					wf.arrowMove(arrowUp, wf.pageSize)
+				case tm.KeyCtrlD:
+					wf.arrowMove(arrowDown, wf.pageSize)
+				default:
+					switch e.Ch {
+					case 'q':
+						quit()
+					case 'j':
+						wf.arrowCircularMove(arrowDown, 1)
+					case 'k':
+						wf.arrowCircularMove(arrowUp, 1)
+					case 'G':
+						wf.arrowMove(arrowDown, wf.machineCount)
 					}
-					wf.selectItem(wf.selectedIndex)
 				}
 			}
 		}

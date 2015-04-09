@@ -275,8 +275,6 @@ func (exec *Executor) Run() (err error) {
 				for _, fmt := range exec.formatters {
 					fmt.Print()
 				}
-				close(outputChannel)
-				close(finishChannel)
 				done <- true
 			}
 		}
@@ -296,5 +294,7 @@ func (exec *Executor) Run() (err error) {
 end:
 	Finish()
 	<-done
+	close(outputChannel)
+	close(finishChannel)
 	return
 }

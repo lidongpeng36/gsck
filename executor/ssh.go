@@ -218,29 +218,25 @@ func (ss *sshExecutor) Execute() (err error) {
 		}
 		list := ss.clients[start:end]
 		var wg sync.WaitGroup
-		// mutex := &sync.Mutex{}
 		for _, c := range list {
 			wg.Add(1)
 			go func(client sshClient) {
-				stdout, stderr, rc, err := client.exec()
+				stdout, stderr, rc, clientErr := client.exec()
 				output := &formatter.Output{
 					Hostname: client.hostname,
 					ExitCode: rc,
 				}
-				if err == nil {
+				if clientErr == nil {
 					output.Stdout = stdout
 					output.Stderr = stderr
 				} else {
-					output.Error = err.Error()
+					output.Error = clientErr.Error()
 				}
-				// mutex.Lock()
-				// mutex.Unlock()
 				AddOutput(output)
 				defer wg.Done()
 			}(c)
 		}
 		wg.Wait()
 	}
-	Finish()
 	return
 }

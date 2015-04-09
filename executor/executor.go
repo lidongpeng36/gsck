@@ -284,19 +284,17 @@ func (exec *Executor) Run() (err error) {
 
 	if exec.worker == nil {
 		err = errors.New("No Execute Method Set.")
-		Finish()
-		<-done
-		return
+		goto end
 	}
 
 	// get worker to work and redirect its output to formatter
 	err = exec.worker.Init()
 	if err != nil {
-		Finish()
-		<-done
-		return
+		goto end
 	}
 	err = exec.worker.Execute()
+end:
+	Finish()
 	<-done
 	return
 }

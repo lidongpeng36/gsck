@@ -2,28 +2,394 @@ package formatter
 
 import (
 	"fmt"
+	"github.com/EvanLi/gsck/util"
 	ui "github.com/gizak/termui"
 	tm "github.com/nsf/termbox-go"
+	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
-const usage = "C-c/q:QUIT; j:DOWN; k:UP; C-u: PageUp; C-d: PageDown; G: EOF"
+const usage = "C-c/q:QUIT; h/j/k/l/gg/G/C-u/C-d/n/N:VIM-LIKE; C-n/C-p:SCROLL OUTPUT;"
+
+var windowFormatterExitCode = 2
+
+const (
+	up   = -1
+	down = 1
+)
+
+type direction int
+
+func adjustSection(start, end, total int) (s, e int) {
+	if end < 0 || total < end {
+		e = total
+	} else {
+		e = end
+	}
+	if start < 0 {
+		s = 0
+	} else {
+		s = start
+	}
+	if s > e {
+		s = e
+	}
+	return
+}
+
+type view interface {
+	accessories() []ui.Bufferer
+	beforeRender()
+	block() *ui.Block
+}
+
+type listView interface {
+	add(int, interface{})
+	area(int, int) []string
+	choose(index int)
+	currentLine() int
+}
+
+type resizableView interface {
+	resize()
+	setNeedResize()
+}
+
+type masterView interface {
+	addSlave(view)
+}
+
+type scrollView interface {
+	view
+	listView
+	resizableView
+	gotoLine(int)
+	scroll(direction direction, step int)
+	circularScroll(direction direction, step int)
+}
+
+type machineOutput struct {
+	output *Output
+	text   string
+	height int
+	width  int
+	start  int
+	end    int
+	margin int
+	lines  []string
+}
+
+func (mo *machineOutput) area(start, end int) []string {
+	start, end = adjustSection(start, end, len(mo.lines))
+	return mo.lines[start:end]
+}
+
+func (mo *machineOutput) currentLine() int {
+	return mo.start
+}
+
+func (mo *machineOutput) visible() []string {
+	return mo.area(mo.start, mo.end)
+}
+
+func (mo *machineOutput) gotoLine(no int) {
+	start := no
+	mo.end = len(mo.lines)
+	if start < 0 {
+		start = 0
+	}
+	if start >= mo.end {
+		start = mo.end - 1
+	}
+	mo.start = start
+}
+
+func (mo *machineOutput) scroll(direction direction, step int) {
+	start := int(direction)*step + mo.start
+	mo.gotoLine(start)
+}
+
+func (mo *machineOutput) circularScroll(direction direction, step int) {
+	mo.scroll(direction, step)
+}
+
+func (mo *machineOutput) resize(height, width int) {
+	if width <= mo.margin || height <= mo.margin {
+		return
+	}
+	mo.width = width
+	mo.lines = util.JustifyText(mo.text, width-mo.margin)
+	length := len(mo.lines)
+	height -= mo.margin
+	mo.height = mo.height
+	mo.end = length
+	if mo.start > mo.end {
+		mo.start = mo.end - 1
+	}
+}
+
+func (mo *machineOutput) add(output *Output) {
+	mo.output = output
+	mo.text = output.Stdout + output.Stderr + output.Error
+}
+
+// outputUI implements scrollView interface
+type outputUI struct {
+	outputs    []*machineOutput
+	needResize bool
+	*machineOutput
+	*ui.List
+}
+
+func newOutputUI(hosts []string) *outputUI {
+	oui := &outputUI{
+		outputs:    make([]*machineOutput, 0, len(hosts)),
+		needResize: true,
+		List:       ui.NewList(),
+	}
+	oui.Border.Label = "OUTPUT"
+	for i := 0; i < len(hosts); i++ {
+		mo := &machineOutput{
+			margin: 2,
+			output: new(Output),
+		}
+		oui.outputs = append(oui.outputs, mo)
+	}
+	oui.machineOutput = oui.outputs[0]
+	oui.setNeedResize()
+	return oui
+}
+
+func (oui *outputUI) block() *ui.Block {
+	return &oui.List.Block
+}
+
+func (oui *outputUI) add(index int, output interface{}) {
+	oui.outputs[index].add(output.(*Output))
+}
+
+func (oui *outputUI) choose(index int) {
+	oui.machineOutput = oui.outputs[index]
+	if len(oui.visible()) == 0 {
+		oui.setNeedResize()
+	}
+}
+
+// resizableView interface
+func (oui *outputUI) accessories() []ui.Bufferer {
+	return []ui.Bufferer{}
+}
+
+func (oui *outputUI) beforeRender() {
+	oui.Items = oui.visible()
+
+}
+
+func (oui *outputUI) resize() {
+	if oui.needResize {
+		oui.machineOutput.resize(oui.Height, oui.Width)
+		oui.needResize = false
+	}
+}
+
+func (oui *outputUI) setNeedResize() {
+	oui.needResize = true
+}
+
+// hostlistUI implements scrollView interface
+type hostlistUI struct {
+	list          []ui.Bufferer
+	lines         []string
+	visible       []ui.Bufferer
+	count         int
+	margin        int
+	shiftX        int
+	shiftY        int
+	selectedIndex int
+	selectedPage  int
+	pageSize      int
+	needResize    bool
+	arrow         ui.Bufferer
+	slaves        []scrollView
+	// container
+	*ui.Par
+}
+
+func newHostlistUI(hosts []string, shiftX, shiftY int) *hostlistUI {
+	count := len(hosts)
+	hui := &hostlistUI{
+		list:       make([]ui.Bufferer, 0, count),
+		lines:      make([]string, 0, count),
+		visible:    []ui.Bufferer{},
+		count:      count,
+		shiftX:     shiftX,
+		shiftY:     shiftY,
+		slaves:     []scrollView{},
+		needResize: true,
+	}
+	arrow := ui.NewPar("->")
+	arrow.Height = 1
+	arrow.X = shiftX + 2
+	arrow.TextFgColor = ui.ColorCyan
+	arrow.HasBorder = false
+
+	hui.arrow = arrow
+	container := ui.NewPar("")
+	container.Border.Label = "HOSTS"
+	hui.Par = container
+
+	digits := len(strconv.FormatInt(int64(count), 10))
+	fmtStr := fmt.Sprintf("[%%%dd] %%s", digits)
+	for index, host := range hosts {
+		text := fmt.Sprintf(fmtStr, index+1, host)
+		mPar := ui.NewPar(text)
+		mPar.Height = 1
+		mPar.Width = ui.TermWidth()/2 - 6
+		mPar.HasBorder = false
+		mPar.X = shiftX + 5
+		mPar.Y = shiftY + index
+		mPar.TextFgColor = ui.ColorBlue
+		mPar.TextBgColor = ui.ColorWhite
+		mPar.BgColor = ui.ColorYellow
+		mPar.IsDisplay = false
+		hui.list = append(hui.list, mPar)
+		hui.lines = append(hui.lines, text)
+	}
+	return hui
+}
+
+func (hui *hostlistUI) block() *ui.Block {
+	return &hui.Par.Block
+}
+
+// masterView interface
+
+func (hui *hostlistUI) addSlave(slave scrollView) {
+	hui.slaves = append(hui.slaves, slave)
+}
+
+// scrollView interface
+
+func (hui *hostlistUI) accessories() []ui.Bufferer {
+	return append(hui.visible, hui.arrow)
+}
+
+func (hui *hostlistUI) gotoLine(no int) {
+	newIndex := no
+	if newIndex < 0 {
+		newIndex = 0
+	}
+	if newIndex >= hui.count {
+		newIndex = hui.count - 1
+	}
+	hui.selectedIndex = newIndex
+	hui.choose(newIndex)
+}
+
+func (hui *hostlistUI) scroll(direction direction, step int) {
+	newIndex := hui.selectedIndex + step*int(direction)
+	hui.gotoLine(newIndex)
+}
+
+func (hui *hostlistUI) circularScroll(direction direction, step int) {
+	newIndex := hui.selectedIndex + step*int(direction)
+	hui.selectedIndex = (hui.count + newIndex) % hui.count
+	hui.choose(hui.selectedIndex)
+}
+
+// resizableView interface
+func (hui *hostlistUI) resize() {
+	if hui.needResize {
+		if hui.Height > 2 {
+			hui.pageSize = hui.Height - 2
+		} else {
+			hui.pageSize = 0
+		}
+		width := ui.TermWidth()/2 - 6
+		for _, m := range hui.list {
+			m.(*ui.Par).Width = width
+		}
+		hui.needResize = false
+	}
+}
+
+func (hui *hostlistUI) setNeedResize() {
+	hui.needResize = true
+}
+
+func (hui *hostlistUI) beforeRender() {
+	if hui.pageSize == 0 {
+		hui.setNeedResize()
+		hui.resize()
+	}
+	start := hui.pageSize * hui.selectedPage
+	end := start + hui.pageSize
+	if end >= hui.count {
+		end = hui.count
+	}
+	hui.visible = hui.list[start:end]
+	for index, machine := range hui.visible {
+		machine.(*ui.Par).Y = hui.shiftY + index
+	}
+	hui.choose(hui.selectedIndex)
+}
+
+// listView interface
+
+func (hui *hostlistUI) add(index int, data interface{}) {
+	output := data.(*Output)
+	for _, slave := range hui.slaves {
+		slave.add(index, output)
+	}
+	machineWidget := hui.list[index].(*ui.Par)
+	if output.ExitCode == 0 {
+		machineWidget.TextFgColor = ui.ColorGreen
+		machineWidget.TextBgColor = ui.ColorBlack
+	} else {
+		machineWidget.TextFgColor = ui.ColorRed
+		machineWidget.TextBgColor = ui.ColorBlack
+	}
+}
+
+func (hui *hostlistUI) choose(index int) {
+	arrow := hui.arrow.(*ui.Par)
+	if hui.pageSize > 0 {
+		residue := index % hui.pageSize
+		arrow.Y = residue + hui.shiftY
+		hui.selectedPage = index / hui.pageSize
+	}
+	hui.setNeedResize()
+	for _, slave := range hui.slaves {
+		slave.choose(hui.selectedIndex)
+	}
+}
+
+func (hui *hostlistUI) area(start, end int) []string {
+	start, end = adjustSection(start, end, len(hui.lines))
+	return hui.lines[start:end]
+}
+
+func (hui *hostlistUI) currentLine() int {
+	return hui.selectedIndex
+}
 
 // WindowFormatter shows Outputs with termui
 type WindowFormatter struct {
 	widgets       map[string]ui.GridBufferer
-	machineWidets []ui.Bufferer
-	machineOutput []*Output
 	machineCount  int
-	headerYShift  int
+	hostlistView  *hostlistUI
+	outputView    *outputUI
+	mainViews     []scrollView
+	mainHeight    int
+	focus         int
 	event         chan tm.Event
 	progress      float64
 	step          float64
-	selectedIndex int
-	pageSize      int
-	selectedPage  int
+	searchKeyword string
+	refreshChan   chan bool
 	*abstractFormatter
 }
 
@@ -32,15 +398,11 @@ func NewWindowFormatter() *WindowFormatter {
 	bf := newAbstractFormatter()
 	count := len(bf.hosts())
 	wf := &WindowFormatter{
-		widgets:       make(map[string]ui.GridBufferer),
-		machineWidets: make([]ui.Bufferer, 0, count),
-		machineOutput: make([]*Output, 0, count),
-		machineCount:  count,
-		event:         make(chan tm.Event),
-		progress:      0,
-		step:          100 / float64(count),
-		selectedIndex: 0,
-		selectedPage:  0,
+		widgets:      make(map[string]ui.GridBufferer),
+		machineCount: count,
+		event:        make(chan tm.Event),
+		step:         100 / float64(count),
+		refreshChan:  make(chan bool, 1),
 	}
 	wf.abstractFormatter = bf
 	err := ui.Init()
@@ -67,7 +429,6 @@ func NewWindowFormatter() *WindowFormatter {
 	gauge.Border.FgColor = ui.ColorCyan
 	gauge.BarColor = ui.ColorGreen
 	wf.widgets["progress"] = gauge
-	wf.headerYShift = gauge.Height + 1
 	// info Textbox
 	infoText := fmt.Sprintf("USER : %s", info.User)
 	infoWidget := ui.NewPar(infoText)
@@ -82,128 +443,252 @@ func NewWindowFormatter() *WindowFormatter {
 		infoWidget.TextBgColor = ui.ColorBlack
 	}
 	infoWidget.Border.Label = "INFO"
-	// Machine List
-	list := ui.NewList()
-	list.Border.Label = "HOSTS"
-	wf.widgets["machine"] = list
-	// Machine Output
-	outputWidget := ui.NewPar("0")
-	outputWidget.Text = "INIT"
-	outputWidget.Border.Label = "OUTPUT"
-	wf.widgets["output"] = outputWidget
-	// Hostlist
-	digits := len(strconv.FormatInt(int64(count), 10))
-	for index, host := range bf.hosts() {
-		fmtStr := fmt.Sprintf("[%%%dd] %%s", digits)
-		mPar := ui.NewPar(fmt.Sprintf(fmtStr, index+1, host))
-		mPar.Height = 1
-		mPar.Width = ui.TermWidth()/2 - 6
-		mPar.HasBorder = false
-		mPar.X = 5
-		mPar.Y = 4 + index
-		mPar.TextFgColor = ui.ColorBlue
-		mPar.TextBgColor = ui.ColorWhite
-		mPar.BgColor = ui.ColorYellow
-		mPar.IsDisplay = false
-		wf.machineWidets = append(wf.machineWidets, mPar)
-		wf.machineOutput = append(wf.machineOutput, new(Output))
-	}
-	// Arrow
-	arrow := ui.NewPar("->")
-	arrow.Height = 1
-	arrow.X = 2
-	arrow.TextFgColor = ui.ColorCyan
-	arrow.HasBorder = false
-	wf.widgets["arrow"] = arrow
+	wf.widgets["info"] = infoWidget
+	// Main
+	wf.outputView = newOutputUI(bf.hosts())
+	wf.hostlistView = newHostlistUI(bf.hosts(), 0, helpWidget.Height+1)
+	wf.hostlistView.addSlave(wf.outputView)
+	wf.mainViews = []scrollView{wf.hostlistView, wf.outputView}
+
 	ui.Body.AddRows(
+		// header
 		ui.NewRow(
 			ui.NewCol(8, 0, gauge),
 			ui.NewCol(4, 0, infoWidget),
 		),
+		// main
 		ui.NewRow(
-			ui.NewCol(6, 0, list),
-			ui.NewCol(6, 6, outputWidget),
+			ui.NewCol(6, 0, wf.hostlistView),
+			ui.NewCol(6, 6, wf.outputView),
 		),
+		// footer
 		ui.NewRow(
 			ui.NewCol(12, 0, helpWidget),
 		),
 	)
-	wf.selectItem(0)
+	go wf.run()
+	return wf
+}
+
+func (wf *WindowFormatter) debug(text string) {
+	infoWidget := wf.widgets["info"].(*ui.Par)
+	infoWidget.Text = text
+}
+
+// run starts UI.
+func (wf *WindowFormatter) run() {
+	helpWidget := wf.widgets["help"].(*ui.Par)
+	// return `true` indicates that this leaderKey wants more args
+	type leaderHandler func(tm.Event, string) bool
+	leaderHandlers := map[string]leaderHandler{
+		"/": func(e tm.Event, args string) bool {
+			if e.Key == tm.KeyEnter {
+				wf.searchKeyword = args
+				wf.searchForward(0)
+				return false
+			}
+			return true
+		},
+		":": func(e tm.Event, args string) bool {
+			if e.Key == tm.KeyEnter {
+				if args == "q" || args == "Q" {
+					wf.quit()
+				}
+				focusView := wf.mainViews[wf.focus]
+				num, err := strconv.ParseInt(args, 10, 32)
+				if err == nil {
+					focusView.gotoLine(int(num) - 1)
+				}
+				return false
+			}
+			return true
+		},
+		"g": func(e tm.Event, args string) bool {
+			switch e.Ch {
+			case 'g':
+				focusView := wf.mainViews[wf.focus]
+				focusView.scroll(up, math.MaxInt32)
+			}
+			return false
+		},
+	}
+	numberLeader := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}
+	numberLeaderHandler := func(leader string) leaderHandler {
+		return func(e tm.Event, args string) bool {
+			if '0' <= e.Ch && e.Ch <= '9' {
+				return true
+			}
+			number, err := strconv.ParseInt(leader+args, 10, 32)
+			if err != nil || number > math.MaxInt32 {
+				return false
+			}
+			wf.kbdHandler(e, int(number))
+			return false
+		}
+	}
+	for _, nl := range numberLeader {
+		leaderHandlers[nl] = numberLeaderHandler(nl)
+	}
+	leaderKey := ""
+	args := ""
+	resetPrefix := func() {
+		leaderKey = ""
+		args = ""
+		helpWidget.Border.Label = "HELP"
+		helpWidget.Text = usage
+	}
 	go func() {
 		for {
 			wf.event <- tm.PollEvent()
 		}
 	}()
-	go wf.run()
-	return wf
-}
-
-const (
-	arrowUp = iota
-	arrowDown
-)
-
-type direction int
-
-func (wf *WindowFormatter) indexCalc(direction direction, step int) int {
-	if direction == arrowUp {
-		step = -step
-	}
-	return wf.selectedIndex + step
-}
-
-func (wf *WindowFormatter) arrowMove(direction direction, step int) {
-	newIndex := wf.indexCalc(direction, step)
-	if newIndex < 0 {
-		newIndex = 0
-	}
-	if newIndex >= wf.machineCount {
-		newIndex = wf.machineCount - 1
-	}
-	if newIndex != wf.selectedIndex {
-		wf.selectedIndex = newIndex
-		wf.selectItem(wf.selectedIndex)
-	}
-}
-
-func (wf *WindowFormatter) arrowCircularMove(direction direction, step int) {
-	newIndex := wf.indexCalc(direction, step)
-	wf.selectedIndex = (wf.machineCount + newIndex) % wf.machineCount
-	wf.selectItem(wf.selectedIndex)
-}
-
-// run starts UI.
-func (wf *WindowFormatter) run() {
-	quit := func() {
-		wf.terminate()
-		os.Exit(2)
-	}
+	wf.setNeedRefresh()
 	for {
 		select {
+		case <-wf.refreshChan:
+			wf.refresh()
 		case e := <-wf.event:
 			if e.Type == tm.EventResize {
-				wf.updateMain()
-				wf.selectItem(wf.selectedIndex)
+				// duplicated. but it's needed for iTerm2.
+				wf.setNeedRefresh()
 			} else if e.Type == tm.EventKey {
-				switch e.Key {
-				case tm.KeyCtrlC:
-					quit()
-				case tm.KeyCtrlU:
-					wf.arrowMove(arrowUp, wf.pageSize)
-				case tm.KeyCtrlD:
-					wf.arrowMove(arrowDown, wf.pageSize)
-				default:
-					switch e.Ch {
-					case 'q':
-						quit()
-					case 'j':
-						wf.arrowCircularMove(arrowDown, 1)
-					case 'k':
-						wf.arrowCircularMove(arrowUp, 1)
-					case 'G':
-						wf.arrowMove(arrowDown, wf.machineCount)
+				input := string(e.Ch)
+				if handler, ok := leaderHandlers[leaderKey]; ok {
+					// Has leader
+					if e.Key == tm.KeyBackspace || e.Key == tm.KeyBackspace2 {
+						// backspace pressed
+						argsLen := len(args)
+						if argsLen >= 1 {
+							args = args[:argsLen-1]
+						}
+						helpWidget.Text = leaderKey + args
+					} else if e.Key != tm.KeyEsc && handler(e, args) {
+						// invoke leader's handler
+						args += input
+						helpWidget.Text = leaderKey + args
+					} else {
+						// esc pressed or handler() already processed the args.
+						resetPrefix()
 					}
+				} else if _, ok := leaderHandlers[input]; ok {
+					// No leader, but input is leader
+					leaderKey = input
+					helpWidget.Border.Label = "Cancel with `Esc`"
+					helpWidget.Text = leaderKey
+				} else {
+					// No leader, and input is not leader
+					wf.kbdHandler(e, 1)
 				}
+			}
+			wf.setNeedRefresh()
+		}
+	}
+}
+
+func (wf *WindowFormatter) search(direction direction, nth int) {
+	if wf.searchKeyword == "" {
+		return
+	}
+	focusView := wf.mainViews[wf.focus]
+	currentLine := focusView.currentLine()
+	var lines []string
+	var start, end, origin int
+	step := int(direction)
+	if direction == up {
+		lines = focusView.area(0, currentLine)
+		start = len(lines) - 1
+		end = 0
+		origin = 0
+	} else {
+		lines = focusView.area(currentLine, -1)
+		start = 0
+		end = len(lines) - 1
+		origin = currentLine
+	}
+	if start < 0 || end < 0 {
+		return
+	}
+	skipped := 0
+	lastFind := -1
+	end += step
+	for i := start; i != end; i += step {
+		line := lines[i]
+		if strings.Contains(line, wf.searchKeyword) {
+			lastFind = origin + i
+			if skipped >= nth {
+				focusView.gotoLine(lastFind)
+				return
+			}
+			skipped++
+		}
+	}
+	if lastFind > 0 {
+		focusView.gotoLine(lastFind)
+	}
+}
+
+func (wf *WindowFormatter) searchForward(nth int) {
+	wf.search(down, nth)
+}
+
+func (wf *WindowFormatter) searchBackward(nth int) {
+	wf.search(up, nth)
+}
+
+func (wf *WindowFormatter) quit() {
+	wf.terminate()
+	os.Exit(windowFormatterExitCode)
+}
+
+func (wf *WindowFormatter) kbdHandler(e tm.Event, repeat int) {
+	if repeat <= 0 || wf.mainHeight < 2 {
+		return
+	}
+	mainViewCount := len(wf.mainViews)
+	if e.Type == tm.EventResize {
+		for _, v := range wf.mainViews {
+			v.setNeedResize()
+		}
+	} else if e.Type == tm.EventKey {
+		focusView := wf.mainViews[wf.focus]
+		switch e.Key {
+		case tm.KeyCtrlC:
+			wf.quit()
+		case tm.KeyCtrlU:
+			focusView.scroll(up, wf.mainHeight*repeat)
+		case tm.KeyCtrlD:
+			focusView.scroll(down, wf.mainHeight*repeat)
+		case tm.KeyCtrlN:
+			wf.outputView.scroll(down, repeat)
+		case tm.KeyCtrlP:
+			wf.outputView.scroll(up, repeat)
+		default:
+			switch e.Ch {
+			case 'q':
+				wf.quit()
+			case 'h':
+				if wf.focus-1 < 0 {
+					wf.focus = 0
+				} else {
+					wf.focus--
+				}
+			case 'j':
+				focusView.circularScroll(down, repeat)
+			case 'k':
+				focusView.circularScroll(up, repeat)
+			case 'l':
+				if wf.focus+1 >= mainViewCount {
+					wf.focus = mainViewCount - 1
+				} else {
+					wf.focus++
+				}
+			case 'n':
+				wf.searchForward(repeat)
+			case 'N':
+				// skip current line
+				wf.searchBackward(repeat - 1)
+			case 'G':
+				focusView.scroll(down, math.MaxInt32)
 			}
 		}
 	}
@@ -213,84 +698,47 @@ func (wf *WindowFormatter) terminate() {
 	ui.Close()
 }
 
+func (wf *WindowFormatter) setNeedRefresh() {
+	go func() {
+		wf.refreshChan <- true
+	}()
+}
+
 func (wf *WindowFormatter) refresh() {
+	wf.updateMain()
 	ui.Body.Width = ui.TermWidth()
 	ui.Body.Align()
 	bufferers := []ui.Bufferer{ui.Body}
-	ms := wf.machineSlice()
-	for index, machine := range ms {
-		machine.(*ui.Par).Y = index + wf.headerYShift
+	for i, v := range wf.mainViews {
+		view := v.block()
+		if i == wf.focus {
+			view.Border.FgColor = ui.ColorRed
+		} else {
+			view.Border.FgColor = ui.ColorWhite
+		}
+		v.resize()
+		v.beforeRender()
+		bufferers = append(bufferers, v.accessories()...)
 	}
-	bufferers = append(bufferers, ms...)
-	arrow := wf.widgets["arrow"]
-	bufferers = append(bufferers, arrow)
 	ui.Render(bufferers...)
 }
 
-func (wf *WindowFormatter) mainHeightCalc() int {
+func (wf *WindowFormatter) updateMain() {
 	helpWidget := wf.widgets["help"]
 	progress := wf.widgets["progress"]
 	mainHeight := ui.TermHeight() - helpWidget.GetHeight() - progress.GetHeight()
-	return mainHeight
-}
 
-func (wf *WindowFormatter) updateMain() {
-	list := wf.widgets["machine"].(*ui.List)
-	outputWidget := wf.widgets["output"].(*ui.Par)
-	mainHeight := wf.mainHeightCalc()
-	list.Height = mainHeight
-	if mainHeight > 2 {
-		wf.pageSize = mainHeight - 2
-	} else {
-		wf.pageSize = 0
-	}
-	width := ui.TermWidth()/2 - 6
-	for _, m := range wf.machineWidets {
-		m.(*ui.Par).Width = width
-	}
-	outputWidget.Height = mainHeight
-}
+	wf.mainHeight = mainHeight
 
-func (wf *WindowFormatter) machineSlice() []ui.Bufferer {
-	start := wf.pageSize * wf.selectedPage
-	end := start + wf.pageSize
-	if end >= wf.machineCount {
-		end = wf.machineCount
+	for _, v := range wf.mainViews {
+		v.block().Height = mainHeight
+		v.setNeedResize()
 	}
-	return wf.machineWidets[start:end]
-}
-
-func (wf *WindowFormatter) selectItem(index int) {
-	wf.updateMain()
-	arrow := wf.widgets["arrow"].(*ui.Par)
-	if wf.pageSize > 0 {
-		residue := index % wf.pageSize
-		arrow.Y = residue + wf.headerYShift
-		wf.selectedPage = index / wf.pageSize
-	}
-	outputWidget := wf.widgets["output"].(*ui.Par)
-	output := wf.machineOutput[index]
-	if output.Stdout != "" {
-		outputWidget.Text = output.Stdout
-		outputWidget.TextFgColor = ui.ColorWhite
-		outputWidget.TextBgColor = ui.ColorBlack
-	} else if output.Stderr != "" {
-		outputWidget.Text = output.Stderr
-		outputWidget.TextFgColor = ui.ColorRed
-		outputWidget.TextBgColor = ui.ColorWhite
-	} else if output.Error != "" {
-		outputWidget.Text = output.Error
-		outputWidget.TextFgColor = ui.ColorRed
-		outputWidget.TextBgColor = ui.ColorWhite
-	} else {
-		outputWidget.Text = ""
-	}
-	wf.refresh()
 }
 
 // pragma mark - Formatter Interface
 
-// Add refreshes contents on screen
+// Add binds Output to machine, and refreshes contents on screen
 func (wf *WindowFormatter) Add(output *Output) {
 	wf.progress += wf.step
 	gauge := wf.widgets["progress"].(*ui.Gauge)
@@ -300,20 +748,16 @@ func (wf *WindowFormatter) Add(output *Output) {
 	}
 	gauge.Percent = progressInt
 	index := output.Index
-	machineWidget := wf.machineWidets[index].(*ui.Par)
-	if output.ExitCode == 0 {
-		machineWidget.TextFgColor = ui.ColorGreen
-		machineWidget.TextBgColor = ui.ColorBlack
-	} else {
-		machineWidget.TextFgColor = ui.ColorRed
-		machineWidget.TextBgColor = ui.ColorBlack
-	}
-	wf.machineOutput[index] = output
-	wf.selectItem(wf.selectedIndex)
+
+	wf.hostlistView.add(index, output)
+	wf.setNeedRefresh()
 }
 
-// Print waits a while and then close UI
+// Print waits util q/C-c.
 func (wf *WindowFormatter) Print() {
+	windowFormatterExitCode = 0
+	inf := make(chan bool, 1)
 	time.Sleep(5 * time.Second)
+	<-inf
 	wf.terminate()
 }

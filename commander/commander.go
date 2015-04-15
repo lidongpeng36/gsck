@@ -22,7 +22,7 @@ func init() {
 	app = cli.NewApp()
 	app.Name = "gsck"
 	app.Author = "lidongpeng36@gmail.com"
-	app.Version = "1.1.0"
+	app.Version = "1.2.0"
 	app.Usage = "Execute commands on multiple machines over SSH (or other control system)"
 	commands = make([]cli.Command, 0, 2)
 	defaultUser = config.GetString("user")
@@ -94,7 +94,7 @@ var TimeoutFlag = cli.IntFlag{
 // WindowFlag `-w`
 var WindowFlag = cli.BoolFlag{
 	Name:  "window, w",
-	Usage: "Command-Line User Interface",
+	Usage: "Vim-like Command-Line User Interface",
 }
 
 // Init collects all Commands

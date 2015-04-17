@@ -145,13 +145,13 @@ type sshExecutor struct {
 
 func assembleSSHCmd(cmd string) string {
 	var transferCmd string
-	if NeedTransferFile() {
+	if _executor.NeedTransferFile() {
 		trans := _executor.Transfer
 		transferCmd = "cd " + trans.Destination +
 			" && /usr/bin/scp -qrt ." + " && " +
 			fmt.Sprintf("echo '%s saved.'", trans.Dst)
 	}
-	transferCmd = WrapCmdWithHook(transferCmd)
+	transferCmd = _executor.WrapCmdWithHook(transferCmd)
 	return util.WrapCmdBefore(cmd, transferCmd)
 }
 
@@ -184,7 +184,7 @@ func (ss *sshExecutor) Init() error {
 	}
 	ss.clients = make([]sshClient, 0, len(hostlist))
 	var transfer *TransferFile
-	if NeedTransferFile() {
+	if _executor.NeedTransferFile() {
 		transfer = _executor.Transfer
 	}
 	cmdFinal := assembleSSHCmd(cmd)
@@ -232,7 +232,7 @@ func (ss *sshExecutor) Execute() (err error) {
 				} else {
 					output.Error = clientErr.Error()
 				}
-				AddOutput(output)
+				_executor.AddOutput(output)
 				defer wg.Done()
 			}(c)
 		}

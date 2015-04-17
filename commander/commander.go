@@ -22,7 +22,7 @@ func init() {
 	app = cli.NewApp()
 	app.Name = "gsck"
 	app.Author = "lidongpeng36@gmail.com"
-	app.Version = "1.2.0"
+	app.Version = "1.2.1"
 	app.Usage = "Execute commands on multiple machines over SSH (or other control system)"
 	commands = make([]cli.Command, 0, 2)
 	defaultUser = config.GetString("user")
@@ -159,15 +159,9 @@ func PrepareExecutor(c *cli.Context) {
 	} else {
 		exec.AddFormatter("rt", formatter.NewAnsiFormatter())
 	}
-	exec.SetTimeout(int64(c.Int("timeout")))
 	exec.SetHostlist(list).SetConcurrency(int64(c.Int("concurrency")))
-	exec.SetUser(c.String("user")).SetPasswd(passwd)
-	exec.Account = c.String("account")
-	method := c.String("method")
-	if method == "" {
-		method = "ssh"
-	}
-	exec.SetMethod(method)
+	exec.SetTimeout(int64(c.Int("timeout"))).SetMethod(c.String("method"))
+	exec.SetUser(c.String("user")).SetPasswd(passwd).SetAccount(c.String("account"))
 }
 
 // CheckExecutor checks errors in executor. Exit if find any.

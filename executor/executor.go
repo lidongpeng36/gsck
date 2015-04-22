@@ -18,9 +18,6 @@ const concurrencyRecommend int64 = 60
 var _executor *Executor
 var constructorMap = map[string]WorkerConstructor{}
 
-func init() {
-}
-
 // NewExecutor returns an empty Executor
 func NewExecutor() *Executor {
 	usr, err := user.Current()
@@ -29,12 +26,15 @@ func NewExecutor() *Executor {
 		username = usr.Username
 	}
 	return &Executor{
-		User:          username,
-		Hostlist:      make([]string, 0, 0),
+		Data: &Data{
+			User:          username,
+			Hostlist:      make([]string, 0, 0),
+			Concurrency:   1,
+			indexMap:      map[string]int{},
+			outputChannel: make(chan formatter.Output, 1),
+		},
 		formatters:    make(map[string]formatter.Formatter),
-		Concurrency:   1,
 		err:           make([]error, 0, 1),
-		outputChannel: make(chan *formatter.Output, 1),
 		finishChannel: make(chan bool, 1),
 	}
 }
@@ -60,7 +60,7 @@ func Available() []string {
 // 1. execute cmd string
 // 2. copy file (from *Executor.transferFile)
 type Worker interface {
-	Init() error
+	Init(*Data) error
 	Name() string
 	Execute() error
 }
@@ -90,8 +90,8 @@ type TransferFile struct {
 	hook        *transferHook
 }
 
-// Executor is a singleton class. Holds meta info for worker.
-type Executor struct {
+// Data holds data for worker
+type Data struct {
 	User          string
 	Passwd        string
 	Cmd           string
@@ -99,19 +99,53 @@ type Executor struct {
 	Concurrency   int64
 	Hostlist      []string
 	Timeout       int64
-	formatters    map[string]formatter.Formatter
-	indexMap      map[string]int
-	worker        Worker
 	Transfer      *TransferFile
+	indexMap      map[string]int
+	outputChannel chan formatter.Output
+}
+
+// WrapCmdWithHook returns wrapped cmd, e.g. add `-a` and `-b` args
+func (data *Data) WrapCmdWithHook(cmd string) string {
+	if data.Transfer == nil || data.Transfer.hook == nil {
+		return cmd
+	}
+	hook := data.Transfer.hook
+	return util.WrapCmd(cmd, hook.before, hook.after)
+}
+
+// NeedTransferFile returns whether Worker should handle file copying.
+func (data *Data) NeedTransferFile() bool {
+	if data.Transfer != nil {
+		trans := data.Transfer
+		if trans.Dst != "" && trans.Data != nil {
+			return true
+		}
+		return false
+	}
+	return false
+}
+
+// AddOutput informs formatter with new output
+func (data *Data) AddOutput(output formatter.Output) {
+	if index, ok := data.indexMap[output.Hostname]; ok {
+		output.Index = index
+		data.outputChannel <- output
+	}
+}
+
+// Executor is a singleton class. Holds meta info for worker.
+type Executor struct {
+	Data          *Data
+	formatters    map[string]formatter.Formatter
+	Worker        Worker
 	err           []error
-	outputChannel chan *formatter.Output
 	finishChannel chan bool
 }
 
 // SetUser sets user for execution, if user is not empty.
 func (exec *Executor) SetUser(user string) *Executor {
 	if user != "" {
-		exec.User = user
+		exec.Data.User = user
 	}
 	return exec
 }
@@ -119,41 +153,40 @@ func (exec *Executor) SetUser(user string) *Executor {
 // SetAccount sets account for execution, if account is not empty.
 func (exec *Executor) SetAccount(account string) *Executor {
 	if account != "" {
-		exec.Account = account
+		exec.Data.Account = account
 	}
 	return exec
 }
 
 // SetPasswd sets passwd for execution, without check or modification.
 func (exec *Executor) SetPasswd(passwd string) *Executor {
-	exec.Passwd = passwd
+	exec.Data.Passwd = passwd
 	return exec
 }
 
 // SetCmd sets cmd for execution, without check or modification.
 func (exec *Executor) SetCmd(cmd string) *Executor {
-	exec.Cmd = cmd
+	exec.Data.Cmd = cmd
 	return exec
 }
 
 // SetConcurrency sets concurrency for execution, without check or modification.
 func (exec *Executor) SetConcurrency(concurrency int64) *Executor {
-	exec.Concurrency = concurrency
+	exec.Data.Concurrency = concurrency
 	return exec
 }
 
 // SetTimeout sets timeout for execution, without check or modification.
 func (exec *Executor) SetTimeout(timeout int64) *Executor {
-	exec.Timeout = timeout
+	exec.Data.Timeout = timeout
 	return exec
 }
 
 // SetHostlist sets hostlist for execution, without check or modification.
 func (exec *Executor) SetHostlist(list []string) *Executor {
-	exec.Hostlist = list
-	exec.indexMap = map[string]int{}
+	exec.Data.Hostlist = list
 	for index, hostname := range list {
-		exec.indexMap[hostname] = index
+		exec.Data.indexMap[hostname] = index
 	}
 	return exec
 }
@@ -161,8 +194,9 @@ func (exec *Executor) SetHostlist(list []string) *Executor {
 // AddFormatter adds formatter into a hash.
 // Formatters are devided into categories, and each category can hold only one Formatter.
 // Obviously, the key for hash is `category`.
-func (exec *Executor) AddFormatter(category string, fmt formatter.Formatter) {
+func (exec *Executor) AddFormatter(category string, fmt formatter.Formatter) *Executor {
 	exec.formatters[category] = fmt
+	return exec
 }
 
 // SetMethod sets concreate worker.
@@ -171,7 +205,7 @@ func (exec *Executor) SetMethod(method string) *Executor {
 		method = "ssh"
 	}
 	if constructor, ok := constructorMap[method]; ok {
-		exec.worker = constructor()
+		exec.Worker = constructor()
 	} else {
 		exec.err = append(exec.err, errors.New("No Such Method: "+method))
 	}
@@ -190,7 +224,7 @@ func (exec *Executor) SetTransfer(src, dst string) *Executor {
 		} else {
 			basename := filepath.Base(src)
 			dstPath := path.Join(dst, basename)
-			exec.Transfer = &TransferFile{
+			exec.Data.Transfer = &TransferFile{
 				Data:        data,
 				Perm:        perm,
 				Basename:    basename,
@@ -205,11 +239,11 @@ func (exec *Executor) SetTransfer(src, dst string) *Executor {
 
 // SetTransferHook sets a hook, which would be executed before and after, for the file copying.
 func (exec *Executor) SetTransferHook(before, after string) *Executor {
-	if exec.Transfer == nil {
-		exec.Transfer = new(TransferFile)
+	if exec.Data.Transfer == nil {
+		exec.Data.Transfer = new(TransferFile)
 	}
 	if before != "" || after != "" {
-		exec.Transfer.hook = &transferHook{
+		exec.Data.Transfer.hook = &transferHook{
 			before: before,
 			after:  after,
 		}
@@ -219,7 +253,7 @@ func (exec *Executor) SetTransferHook(before, after string) *Executor {
 
 // HostCount returns len(@Hostlist)
 func (exec *Executor) HostCount() int {
-	return len(exec.Hostlist)
+	return len(exec.Data.Hostlist)
 }
 
 // Check returns all errors that comes from initialization.
@@ -227,91 +261,58 @@ func (exec *Executor) Check() []error {
 	return exec.err
 }
 
-// AddOutput informs formatter with new output
-func (exec *Executor) AddOutput(output *formatter.Output) {
-	if output != nil {
-		if index, ok := exec.indexMap[output.Hostname]; ok {
-			output.Index = index
-			exec.outputChannel <- output
-		}
-	}
-}
-
-// Finish informs formatter that it should stop.
-func (exec *Executor) Finish() {
-	exec.finishChannel <- true
-}
-
-// WrapCmdWithHook returns wrapped cmd, e.g. add `-a` and `-b` args
-func (exec *Executor) WrapCmdWithHook(cmd string) string {
-	if exec.Transfer == nil || exec.Transfer.hook == nil {
-		return cmd
-	}
-	hook := exec.Transfer.hook
-	return util.WrapCmd(cmd, hook.before, hook.after)
-}
-
-// NeedTransferFile returns whether Worker should handle file copying.
-func (exec *Executor) NeedTransferFile() bool {
-	if exec.Transfer != nil {
-		trans := exec.Transfer
-		if trans.Dst != "" && trans.Data != nil {
-			return true
-		}
-		return false
-	}
-	return false
-}
-
 // Run will initialize and drive worker and send output to Formatter(s)
 func (exec *Executor) Run() (err error) {
 	// Adjust concurrency
-	con := exec.Concurrency
+	con := exec.Data.Concurrency
 	count := int64(exec.HostCount())
+	if count == 0 {
+		err = errors.New("Executor cannot Run: Empty Hostlist")
+	}
 	if con == 0 || con > concurrencyRecommend {
 		con = concurrencyRecommend
-	} else if exec.Concurrency < 0 {
+	} else if con < 0 {
 		con = count
 	}
 	if con > count {
 		con = count
 	}
-	exec.Concurrency = con
+	exec.Data.Concurrency = con
 
 	done := make(chan bool, 1)
 	go func() {
+	loop:
 		for {
 			select {
-			case output := <-exec.outputChannel:
-				if output != nil {
-					for _, fmt := range exec.formatters {
-						fmt.Add(output)
-					}
+			case output := <-exec.Data.outputChannel:
+				for _, fmt := range exec.formatters {
+					fmt.Add(output)
 				}
 			case <-exec.finishChannel:
 				for _, fmt := range exec.formatters {
 					fmt.Print()
 				}
-				done <- true
+				break loop
 			}
 		}
+		done <- true
 	}()
 
-	if exec.worker == nil {
+	if exec.Worker == nil {
 		err = errors.New("No Execute Method Set.")
 		goto end
 	}
 
 	// get worker to work and redirect its output to formatter
-	err = exec.worker.Init()
-	if err != nil {
+	if err = exec.Worker.Init(exec.Data); err != nil {
 		goto end
 	}
-	err = exec.worker.Execute()
+	err = exec.Worker.Execute()
 end:
-	exec.Finish()
+	exec.finishChannel <- true
 	<-done
-	close(exec.outputChannel)
+	close(done)
 	close(exec.finishChannel)
+	close(exec.Data.outputChannel)
 	return
 }

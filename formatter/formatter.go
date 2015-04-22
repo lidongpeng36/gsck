@@ -44,7 +44,7 @@ func SetHostlist(list []string) {
 // Executor will send Output to Formatter with Add,
 // and make Formatter Print when finished.
 type Formatter interface {
-	Add(*Output)
+	Add(Output)
 	Print()
 }
 

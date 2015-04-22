@@ -72,7 +72,7 @@ type scrollView interface {
 }
 
 type machineOutput struct {
-	output *Output
+	output Output
 	text   string
 	height int
 	width  int
@@ -131,7 +131,7 @@ func (mo *machineOutput) resize(height, width int) {
 	}
 }
 
-func (mo *machineOutput) add(output *Output) {
+func (mo *machineOutput) add(output Output) {
 	mo.output = output
 	mo.text = output.Stdout + output.Stderr + output.Error
 }
@@ -154,7 +154,7 @@ func newOutputUI(hosts []string) *outputUI {
 	for i := 0; i < len(hosts); i++ {
 		mo := &machineOutput{
 			margin: 2,
-			output: new(Output),
+			output: *new(Output),
 		}
 		oui.outputs = append(oui.outputs, mo)
 	}
@@ -168,7 +168,7 @@ func (oui *outputUI) block() *ui.Block {
 }
 
 func (oui *outputUI) add(index int, output interface{}) {
-	oui.outputs[index].add(output.(*Output))
+	oui.outputs[index].add(output.(Output))
 }
 
 func (oui *outputUI) choose(index int) {
@@ -340,7 +340,7 @@ func (hui *hostlistUI) beforeRender() {
 // listView interface
 
 func (hui *hostlistUI) add(index int, data interface{}) {
-	output := data.(*Output)
+	output := data.(Output)
 	for _, slave := range hui.slaves {
 		slave.add(index, output)
 	}
@@ -739,7 +739,7 @@ func (wf *WindowFormatter) updateMain() {
 // pragma mark - Formatter Interface
 
 // Add binds Output to machine, and refreshes contents on screen
-func (wf *WindowFormatter) Add(output *Output) {
+func (wf *WindowFormatter) Add(output Output) {
 	wf.progress += wf.step
 	gauge := wf.widgets["progress"].(*ui.Gauge)
 	progressInt := int(wf.progress)
@@ -753,11 +753,14 @@ func (wf *WindowFormatter) Add(output *Output) {
 	wf.setNeedRefresh()
 }
 
-// Print waits util q/C-c.
+// Print waits util q/C-c if progress > 100.
 func (wf *WindowFormatter) Print() {
 	windowFormatterExitCode = 0
-	inf := make(chan bool, 1)
-	time.Sleep(5 * time.Second)
-	<-inf
+	gauge := wf.widgets["progress"].(*ui.Gauge)
+	time.Sleep(time.Second)
+	if gauge.Percent > 0 {
+		time.Sleep(20 * time.Second)
+		<-make(chan bool, 1)
+	}
 	wf.terminate()
 }

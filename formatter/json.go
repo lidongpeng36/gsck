@@ -7,7 +7,7 @@ import (
 )
 
 type jsonData struct {
-	List    []*Output `json:"list"`
+	List    []Output `json:"list"`
 	Summary struct {
 		Success int64 `json:"success"`
 		Failed  int64 `json:"failed"`
@@ -23,7 +23,7 @@ type JSONFormatter struct {
 // NewJSONFormatter is JSONFormatter's constructor
 func NewJSONFormatter() *JSONFormatter {
 	data := new(jsonData)
-	data.List = make([]*Output, 0, 10)
+	data.List = make([]Output, 0, 10)
 	jf := &JSONFormatter{
 		data: data,
 	}
@@ -33,7 +33,7 @@ func NewJSONFormatter() *JSONFormatter {
 // pragma mark - Formatter Interface
 
 // Add just collects all outputs, no prints.
-func (jf *JSONFormatter) Add(output *Output) {
+func (jf *JSONFormatter) Add(output Output) {
 	jf.data.List = append(jf.data.List, output)
 	if output.Error != "" {
 		jf.data.Summary.Error++

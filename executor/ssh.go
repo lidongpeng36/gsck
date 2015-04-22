@@ -54,6 +54,7 @@ func getKeyFile(t string) (key ssh.Signer, err error) {
 type sshClient struct {
 	hostname string
 	cmd      string
+	timeout  int64
 	client   *ssh.Client
 	session  *ssh.Session
 	config   *ssh.ClientConfig
@@ -62,7 +63,7 @@ type sshClient struct {
 }
 
 func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
-	timeout := _executor.Timeout
+	timeout := sc.timeout
 	for retry := sc.retry; retry >= 0; retry-- {
 		connectError := make(chan error, 1)
 		go func() {
@@ -81,7 +82,7 @@ func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
 		} else if retry > 0 {
 			ms := randSrc.Int63n(1000)
 			if sc.client != nil {
-				sc.client.Close()
+				_ = sc.client.Close()
 			}
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 		} else {
@@ -91,7 +92,7 @@ func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
 	}
 	defer func() {
 		// Close client
-		sc.client.Close()
+		_ = sc.client.Close()
 	}()
 	sc.session, err = sc.client.NewSession()
 	if err != nil {
@@ -99,7 +100,7 @@ func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
 	}
 	defer func() {
 		// Close Session
-		sc.session.Close()
+		_ = sc.session.Close()
 	}()
 	var stdoutBuf, stderrBuf bytes.Buffer
 	sc.session.Stdout = &stdoutBuf
@@ -108,12 +109,12 @@ func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
 	if sc.transfer != nil {
 		go func() {
 			stdin, _err := sc.session.StdinPipe()
-			defer stdin.Close()
+			defer func() { _ = stdin.Close() }()
 			if _err != nil {
 				execError <- _err
 			}
 			fmt.Fprintf(stdin, "C%v %v %v\n", sc.transfer.Perm, len(sc.transfer.Data), sc.transfer.Basename)
-			stdin.Write(sc.transfer.Data)
+			_, _ = stdin.Write(sc.transfer.Data)
 			fmt.Fprint(stdin, "\x00")
 		}()
 	}
@@ -141,17 +142,18 @@ func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
 type sshExecutor struct {
 	config  *ssh.ClientConfig
 	clients []sshClient
+	data    *Data
 }
 
-func assembleSSHCmd(cmd string) string {
+func (ss *sshExecutor) assembleSSHCmd(cmd string) string {
 	var transferCmd string
-	if _executor.NeedTransferFile() {
-		trans := _executor.Transfer
+	if ss.data.NeedTransferFile() {
+		trans := ss.data.Transfer
 		transferCmd = "cd " + trans.Destination +
 			" && /usr/bin/scp -qrt ." + " && " +
 			fmt.Sprintf("echo '%s saved.'", trans.Dst)
 	}
-	transferCmd = _executor.WrapCmdWithHook(transferCmd)
+	transferCmd = ss.data.WrapCmdWithHook(transferCmd)
 	return util.WrapCmdBefore(cmd, transferCmd)
 }
 
@@ -161,9 +163,10 @@ func (ss *sshExecutor) Name() string {
 	return "ssh"
 }
 
-func (ss *sshExecutor) Init() error {
-	hostlist := _executor.Hostlist
-	cmd := _executor.Cmd
+func (ss *sshExecutor) Init(data *Data) error {
+	ss.data = data
+	hostlist := data.Hostlist
+	cmd := data.Cmd
 	authKeys := make([]ssh.Signer, 0, 2)
 	for _, t := range []string{"rsa", "dsa"} {
 		key, err := getKeyFile(t)
@@ -175,19 +178,19 @@ func (ss *sshExecutor) Init() error {
 	authMethod := []ssh.AuthMethod{
 		ssh.PublicKeys(authKeys...),
 	}
-	if _executor.Passwd != "" {
-		authMethod = append(authMethod, ssh.Password(_executor.Passwd))
+	if data.Passwd != "" {
+		authMethod = append(authMethod, ssh.Password(data.Passwd))
 	}
 	ss.config = &ssh.ClientConfig{
-		User: _executor.User,
+		User: data.User,
 		Auth: authMethod,
 	}
 	ss.clients = make([]sshClient, 0, len(hostlist))
 	var transfer *TransferFile
-	if _executor.NeedTransferFile() {
-		transfer = _executor.Transfer
+	if data.NeedTransferFile() {
+		transfer = data.Transfer
 	}
-	cmdFinal := assembleSSHCmd(cmd)
+	cmdFinal := ss.assembleSSHCmd(cmd)
 	retry := config.GetInt("retry")
 	for _, hostname := range hostlist {
 		client := sshClient{
@@ -196,6 +199,7 @@ func (ss *sshExecutor) Init() error {
 			cmd:      cmdFinal,
 			retry:    retry,
 			transfer: transfer,
+			timeout:  data.Timeout,
 		}
 		ss.clients = append(ss.clients, client)
 	}
@@ -204,7 +208,7 @@ func (ss *sshExecutor) Init() error {
 
 func (ss *sshExecutor) Execute() (err error) {
 	count := int64(len(ss.clients))
-	concurrency := _executor.Concurrency
+	concurrency := ss.data.Concurrency
 	groups := count/concurrency + 1
 	var i int64
 	for i = 0; i < groups; i++ {
@@ -222,7 +226,7 @@ func (ss *sshExecutor) Execute() (err error) {
 			wg.Add(1)
 			go func(client sshClient) {
 				stdout, stderr, rc, clientErr := client.exec()
-				output := &formatter.Output{
+				output := formatter.Output{
 					Hostname: client.hostname,
 					ExitCode: rc,
 				}
@@ -232,7 +236,7 @@ func (ss *sshExecutor) Execute() (err error) {
 				} else {
 					output.Error = clientErr.Error()
 				}
-				_executor.AddOutput(output)
+				ss.data.AddOutput(output)
 				defer wg.Done()
 			}(c)
 		}

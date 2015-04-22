@@ -63,7 +63,7 @@ func (af *AnsiFormatter) generateHeader(hostname string) (header string) {
 // pragma mark - Formatter Interface
 
 // Add will print output to screen as AnsiFormatter is a real-time Formatter.
-func (af *AnsiFormatter) Add(output *Output) {
+func (af *AnsiFormatter) Add(output Output) {
 	af.index = af.index + 1
 	header := af.generateHeader(output.Hostname)
 	headerFmt := af.normalHeader

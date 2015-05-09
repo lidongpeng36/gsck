@@ -12,6 +12,17 @@ import (
 	"time"
 )
 
+// log to file
+var debugLog = ""
+var logger *util.Logger
+
+func init() {
+	if debugLog != "" {
+		logger = util.NewLogger(debugLog)
+		logger.Debug("Logger's Ready!")
+	}
+}
+
 const usage = "C-c/q:QUIT; h/j/k/l/gg/G/C-u/C-d/n/N:VIM-LIKE; C-n/C-p:SCROLL OUTPUT;"
 
 var windowFormatterExitCode = 2
@@ -175,6 +186,7 @@ func (oui *outputUI) choose(index int) {
 	oui.machineOutput = oui.outputs[index]
 	if len(oui.visible()) == 0 {
 		oui.setNeedResize()
+		oui.resize()
 	}
 }
 
@@ -185,7 +197,6 @@ func (oui *outputUI) accessories() []ui.Bufferer {
 
 func (oui *outputUI) beforeRender() {
 	oui.Items = oui.visible()
-
 }
 
 func (oui *outputUI) resize() {
@@ -254,11 +265,23 @@ func newHostlistUI(hosts []string, shiftX, shiftY int) *hostlistUI {
 		mPar.TextFgColor = ui.ColorBlue
 		mPar.TextBgColor = ui.ColorWhite
 		mPar.BgColor = ui.ColorYellow
-		mPar.IsDisplay = false
 		hui.list = append(hui.list, mPar)
 		hui.lines = append(hui.lines, text)
 	}
 	return hui
+}
+
+func (hui *hostlistUI) fillVisibleList() {
+	start := hui.pageSize * hui.selectedPage
+	hui.visible = hui.list[0:hui.pageSize]
+	for index, machine := range hui.visible {
+		no := start + index
+		if no < hui.count {
+			machine.(*ui.Par).Text = hui.lines[no]
+		} else {
+			machine.(*ui.Par).Text = ""
+		}
+	}
 }
 
 func (hui *hostlistUI) block() *ui.Block {
@@ -273,8 +296,10 @@ func (hui *hostlistUI) addSlave(slave scrollView) {
 
 // scrollView interface
 
-func (hui *hostlistUI) accessories() []ui.Bufferer {
-	return append(hui.visible, hui.arrow)
+func (hui *hostlistUI) accessories() (list []ui.Bufferer) {
+	list = append([]ui.Bufferer(nil), hui.visible...)
+	list = append(list, hui.arrow)
+	return
 }
 
 func (hui *hostlistUI) gotoLine(no int) {
@@ -309,7 +334,7 @@ func (hui *hostlistUI) resize() {
 			hui.pageSize = 0
 		}
 		width := ui.TermWidth()/2 - 6
-		for _, m := range hui.list {
+		for _, m := range hui.visible {
 			m.(*ui.Par).Width = width
 		}
 		hui.needResize = false
@@ -324,16 +349,12 @@ func (hui *hostlistUI) beforeRender() {
 	if hui.pageSize == 0 {
 		hui.setNeedResize()
 		hui.resize()
+	} else {
+		residue := hui.selectedIndex % hui.pageSize
+		hui.arrow.(*ui.Par).Y = residue + hui.shiftY
+		hui.selectedPage = hui.selectedIndex / hui.pageSize
 	}
-	start := hui.pageSize * hui.selectedPage
-	end := start + hui.pageSize
-	if end >= hui.count {
-		end = hui.count
-	}
-	hui.visible = hui.list[start:end]
-	for index, machine := range hui.visible {
-		machine.(*ui.Par).Y = hui.shiftY + index
-	}
+	hui.fillVisibleList()
 	hui.choose(hui.selectedIndex)
 }
 
@@ -355,13 +376,6 @@ func (hui *hostlistUI) add(index int, data interface{}) {
 }
 
 func (hui *hostlistUI) choose(index int) {
-	arrow := hui.arrow.(*ui.Par)
-	if hui.pageSize > 0 {
-		residue := index % hui.pageSize
-		arrow.Y = residue + hui.shiftY
-		hui.selectedPage = index / hui.pageSize
-	}
-	hui.setNeedResize()
 	for _, slave := range hui.slaves {
 		slave.choose(hui.selectedIndex)
 	}
@@ -390,6 +404,7 @@ type WindowFormatter struct {
 	step          float64
 	searchKeyword string
 	refreshChan   chan bool
+	needResize    bool
 	*abstractFormatter
 }
 
@@ -403,6 +418,7 @@ func NewWindowFormatter() *WindowFormatter {
 		event:        make(chan tm.Event),
 		step:         100 / float64(count),
 		refreshChan:  make(chan bool, 1),
+		needResize:   true,
 	}
 	wf.abstractFormatter = bf
 	err := ui.Init()
@@ -459,7 +475,7 @@ func NewWindowFormatter() *WindowFormatter {
 		// main
 		ui.NewRow(
 			ui.NewCol(6, 0, wf.hostlistView),
-			ui.NewCol(6, 6, wf.outputView),
+			ui.NewCol(6, 0, wf.outputView),
 		),
 		// footer
 		ui.NewRow(
@@ -549,8 +565,7 @@ func (wf *WindowFormatter) run() {
 			wf.refresh()
 		case e := <-wf.event:
 			if e.Type == tm.EventResize {
-				// duplicated. but it's needed for iTerm2.
-				wf.setNeedRefresh()
+				wf.needResize = true
 			} else if e.Type == tm.EventKey {
 				input := string(e.Ch)
 				if handler, ok := leaderHandlers[leaderKey]; ok {
@@ -645,11 +660,7 @@ func (wf *WindowFormatter) kbdHandler(e tm.Event, repeat int) {
 		return
 	}
 	mainViewCount := len(wf.mainViews)
-	if e.Type == tm.EventResize {
-		for _, v := range wf.mainViews {
-			v.setNeedResize()
-		}
-	} else if e.Type == tm.EventKey {
+	if e.Type == tm.EventKey {
 		focusView := wf.mainViews[wf.focus]
 		switch e.Key {
 		case tm.KeyCtrlC:
@@ -705,9 +716,15 @@ func (wf *WindowFormatter) setNeedRefresh() {
 }
 
 func (wf *WindowFormatter) refresh() {
-	wf.updateMain()
-	ui.Body.Width = ui.TermWidth()
-	ui.Body.Align()
+	if wf.needResize {
+		wf.needResize = false
+		wf.updateMain()
+		ui.Body.Width = ui.TermWidth()
+		ui.Body.Align()
+		for _, v := range wf.mainViews {
+			v.resize()
+		}
+	}
 	bufferers := []ui.Bufferer{ui.Body}
 	for i, v := range wf.mainViews {
 		view := v.block()
@@ -716,24 +733,26 @@ func (wf *WindowFormatter) refresh() {
 		} else {
 			view.Border.FgColor = ui.ColorWhite
 		}
-		v.resize()
 		v.beforeRender()
 		bufferers = append(bufferers, v.accessories()...)
 	}
 	ui.Render(bufferers...)
 }
 
-func (wf *WindowFormatter) updateMain() {
+func (wf *WindowFormatter) updateMain() bool {
 	helpWidget := wf.widgets["help"]
 	progress := wf.widgets["progress"]
 	mainHeight := ui.TermHeight() - helpWidget.GetHeight() - progress.GetHeight()
 
-	wf.mainHeight = mainHeight
-
-	for _, v := range wf.mainViews {
-		v.block().Height = mainHeight
-		v.setNeedResize()
+	if wf.mainHeight != mainHeight {
+		wf.mainHeight = mainHeight
+		for _, v := range wf.mainViews {
+			v.block().Height = mainHeight
+			v.setNeedResize()
+		}
+		return true
 	}
+	return false
 }
 
 // pragma mark - Formatter Interface

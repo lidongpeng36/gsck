@@ -273,7 +273,11 @@ func newHostlistUI(hosts []string, shiftX, shiftY int) *hostlistUI {
 
 func (hui *hostlistUI) fillVisibleList() {
 	start := hui.pageSize * hui.selectedPage
-	hui.visible = hui.list[0:hui.pageSize]
+	end := hui.pageSize
+	if end > hui.count {
+		end = hui.count
+	}
+	hui.visible = hui.list[0:end]
 	for index, machine := range hui.visible {
 		no := start + index
 		if no < hui.count {

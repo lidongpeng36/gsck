@@ -201,8 +201,8 @@ func (oui *outputUI) beforeRender() {
 
 func (oui *outputUI) resize() {
 	if oui.needResize {
-		oui.machineOutput.resize(oui.Height, oui.Width)
 		oui.needResize = false
+		oui.machineOutput.resize(oui.Height, oui.Width)
 	}
 }
 
@@ -332,16 +332,19 @@ func (hui *hostlistUI) circularScroll(direction direction, step int) {
 // resizableView interface
 func (hui *hostlistUI) resize() {
 	if hui.needResize {
+		hui.needResize = false
 		if hui.Height > 2 {
 			hui.pageSize = hui.Height - 2
 		} else {
 			hui.pageSize = 0
 		}
-		width := ui.TermWidth()/2 - 6
+		width := hui.Width - 6
+		if width < 0 {
+			width = 0
+		}
 		for _, m := range hui.visible {
 			m.(*ui.Par).Width = width
 		}
-		hui.needResize = false
 	}
 }
 
@@ -726,7 +729,7 @@ func (wf *WindowFormatter) refresh() {
 		ui.Body.Width = ui.TermWidth()
 		ui.Body.Align()
 		for _, v := range wf.mainViews {
-			v.resize()
+			v.setNeedResize()
 		}
 	}
 	bufferers := []ui.Bufferer{ui.Body}
@@ -737,6 +740,7 @@ func (wf *WindowFormatter) refresh() {
 		} else {
 			view.Border.FgColor = ui.ColorWhite
 		}
+		v.resize()
 		v.beforeRender()
 		bufferers = append(bufferers, v.accessories()...)
 	}
@@ -752,7 +756,6 @@ func (wf *WindowFormatter) updateMain() bool {
 		wf.mainHeight = mainHeight
 		for _, v := range wf.mainViews {
 			v.block().Height = mainHeight
-			v.setNeedResize()
 		}
 		return true
 	}

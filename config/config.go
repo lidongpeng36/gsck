@@ -28,6 +28,8 @@ func init() {
 	setDefaultFromMap(map[string]string{
 		"user":          os.Getenv("USER"),
 		"retry":         "2",
+		"method":        "ssh",
+		"concurrency":   "1",
 		"formatter":     "ansi",
 		"local.tmpdir":  "/tmp",
 		"remote.tmpdir": "/tmp",

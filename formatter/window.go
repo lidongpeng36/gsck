@@ -210,10 +210,19 @@ func (oui *outputUI) setNeedResize() {
 	oui.needResize = true
 }
 
+const (
+	success = 1
+	failed  = -1
+	ready   = 0
+)
+
+type machineStatus int
+
 // hostlistUI implements scrollView interface
 type hostlistUI struct {
 	list          []ui.Bufferer
 	lines         []string
+	status        []machineStatus
 	visible       []ui.Bufferer
 	count         int
 	margin        int
@@ -234,6 +243,7 @@ func newHostlistUI(hosts []string, shiftX, shiftY int) *hostlistUI {
 	hui := &hostlistUI{
 		list:       make([]ui.Bufferer, 0, count),
 		lines:      make([]string, 0, count),
+		status:     make([]machineStatus, count, count),
 		visible:    []ui.Bufferer{},
 		count:      count,
 		shiftX:     shiftX,
@@ -262,9 +272,6 @@ func newHostlistUI(hosts []string, shiftX, shiftY int) *hostlistUI {
 		mPar.HasBorder = false
 		mPar.X = shiftX + 5
 		mPar.Y = shiftY + index
-		mPar.TextFgColor = ui.ColorBlue
-		mPar.TextBgColor = ui.ColorWhite
-		mPar.BgColor = ui.ColorYellow
 		hui.list = append(hui.list, mPar)
 		hui.lines = append(hui.lines, text)
 	}
@@ -281,7 +288,19 @@ func (hui *hostlistUI) fillVisibleList() {
 	for index, machine := range hui.visible {
 		no := start + index
 		if no < hui.count {
-			machine.(*ui.Par).Text = hui.lines[no]
+			machineWidget := machine.(*ui.Par)
+			machineWidget.Text = hui.lines[no]
+			switch hui.status[no] {
+			case success:
+				machineWidget.TextFgColor = ui.ColorGreen
+				machineWidget.TextBgColor = ui.ColorBlack
+			case failed:
+				machineWidget.TextFgColor = ui.ColorRed
+				machineWidget.TextBgColor = ui.ColorBlack
+			default:
+				machineWidget.TextFgColor = ui.ColorBlue
+				machineWidget.TextBgColor = ui.ColorWhite
+			}
 		} else {
 			machine.(*ui.Par).Text = ""
 		}
@@ -372,13 +391,10 @@ func (hui *hostlistUI) add(index int, data interface{}) {
 	for _, slave := range hui.slaves {
 		slave.add(index, output)
 	}
-	machineWidget := hui.list[index].(*ui.Par)
 	if output.ExitCode == 0 {
-		machineWidget.TextFgColor = ui.ColorGreen
-		machineWidget.TextBgColor = ui.ColorBlack
+		hui.status[index] = success
 	} else {
-		machineWidget.TextFgColor = ui.ColorRed
-		machineWidget.TextBgColor = ui.ColorBlack
+		hui.status[index] = failed
 	}
 }
 

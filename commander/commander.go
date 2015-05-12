@@ -42,13 +42,15 @@ var HostsFlag = cli.StringFlag{
 
 // MethodFlag `-m`
 var MethodFlag = cli.StringFlag{
-	Name:  "method, m",
-	Value: "ssh",
+	Name:   "method, m",
+	Value:  "ssh",
+	EnvVar: "GSCK_METHOD",
 }
 
 // PreferFlag `--prefer`
 var PreferFlag = cli.StringFlag{
-	Name: "prefer",
+	Name:   "prefer",
+	EnvVar: "GSCK_PREFER",
 }
 
 // PasswdFlag `-p`
@@ -59,9 +61,10 @@ var PasswdFlag = cli.BoolFlag{
 
 // ConcurrencyFlag `-c`
 var ConcurrencyFlag = cli.IntFlag{
-	Name:  "concurrency, c",
-	Value: 1,
-	Usage: "Concurrency",
+	Name:   "concurrency, c",
+	Value:  1,
+	Usage:  "Concurrency",
+	EnvVar: "GSCK_CONCURRENCY",
 }
 
 // JSONFlag `-j`
@@ -120,7 +123,7 @@ func getHostList(hostsArg string) (list []string, err error) {
 		}
 		bytes, _ := ioutil.ReadAll(os.Stdin)
 		hostsArg = string(bytes)
-		hostlist.SetPrefer("string")
+		_ = hostlist.SetPrefer("string")
 	} else if hostsArg == "" {
 		err = fmt.Errorf("Show me the host list.")
 		return
@@ -183,5 +186,5 @@ func App() *cli.App {
 
 // Run starts gsck
 func Run() {
-	app.Run(os.Args)
+	_ = app.Run(os.Args)
 }

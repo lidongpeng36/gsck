@@ -799,6 +799,8 @@ func (wf *WindowFormatter) Add(output Output) {
 func (wf *WindowFormatter) Print() {
 	windowFormatterExitCode = 0
 	gauge := wf.widgets["progress"].(*ui.Gauge)
+	gauge.Percent = 100
+	wf.setNeedRefresh()
 	time.Sleep(time.Second)
 	if gauge.Percent > 0 {
 		time.Sleep(20 * time.Second)

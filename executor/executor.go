@@ -31,11 +31,11 @@ func NewExecutor() *Executor {
 			Hostlist:      make([]string, 0, 0),
 			Concurrency:   1,
 			indexMap:      map[string]int{},
-			outputChannel: make(chan formatter.Output, 1),
+			outputChannel: make(chan formatter.Output, 0),
 		},
 		formatters:    make(map[string]formatter.Formatter),
 		err:           make([]error, 0, 1),
-		finishChannel: make(chan bool, 1),
+		finishChannel: make(chan bool, 0),
 	}
 }
 
@@ -63,6 +63,14 @@ type Worker interface {
 	Init(*Data) error
 	Name() string
 	Execute() error
+}
+
+// WorkerWithRecommendedConcurrency could give its recommended concurrency
+type WorkerWithRecommendedConcurrency interface {
+	// Return
+	// <= 0: Recommended Concurrency == Hostlist Length
+	RecommendedConcurrency() int64
+	Worker
 }
 
 // WorkerConstructor is function that receives no parameter and returns Worker
@@ -263,23 +271,15 @@ func (exec *Executor) Check() []error {
 
 // Run will initialize and drive worker and send output to Formatter(s)
 func (exec *Executor) Run() (err error) {
-	// Adjust concurrency
-	con := exec.Data.Concurrency
+
 	count := int64(exec.HostCount())
 	if count == 0 {
 		err = errors.New("Executor cannot Run: Empty Hostlist")
 	}
-	if con == 0 || con > concurrencyRecommend {
-		con = concurrencyRecommend
-	} else if con < 0 {
-		con = count
-	}
-	if con > count {
-		con = count
-	}
-	exec.Data.Concurrency = con
+	con := exec.Data.Concurrency
+	recommendConcurrency := concurrencyRecommend
 
-	done := make(chan bool, 1)
+	done := make(chan bool, 0)
 	go func() {
 	loop:
 		for {
@@ -302,6 +302,23 @@ func (exec *Executor) Run() (err error) {
 		err = errors.New("No Execute Method Set.")
 		goto end
 	}
+
+	// Adjust concurrency
+	if w, ok := exec.Worker.(WorkerWithRecommendedConcurrency); ok {
+		recommendConcurrency = w.RecommendedConcurrency()
+	}
+	if recommendConcurrency <= 0 {
+		recommendConcurrency = count
+	}
+	if con == 0 || con > recommendConcurrency {
+		con = recommendConcurrency
+	} else if con < 0 {
+		con = count
+	}
+	if con > count {
+		con = count
+	}
+	exec.Data.Concurrency = con
 
 	// get worker to work and redirect its output to formatter
 	if err = exec.Worker.Init(exec.Data); err != nil {

@@ -65,7 +65,7 @@ type sshClient struct {
 func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
 	timeout := sc.timeout
 	for retry := sc.retry; retry >= 0; retry-- {
-		connectError := make(chan error, 1)
+		connectError := make(chan error, 0)
 		go func() {
 			var _err error
 			sc.client, _err = ssh.Dial("tcp", sc.hostname+":22", sc.config)
@@ -105,7 +105,7 @@ func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
 	var stdoutBuf, stderrBuf bytes.Buffer
 	sc.session.Stdout = &stdoutBuf
 	sc.session.Stderr = &stderrBuf
-	execError := make(chan error, 1)
+	execError := make(chan error, 0)
 	if sc.transfer != nil {
 		go func() {
 			stdin, _err := sc.session.StdinPipe()

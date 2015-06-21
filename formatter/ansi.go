@@ -26,7 +26,6 @@ type AnsiFormatter struct {
 	digits       int
 	digitFormat  string
 	headerSpace  int
-	// *abstractFormatter
 }
 
 var fill = 72
@@ -47,38 +46,30 @@ func NewAnsiFormatter() *AnsiFormatter {
 		count:        count,
 		digits:       digits,
 		digitFormat:  formatStr,
-		headerSpace:  fill - len(fmt.Sprintf(formatStr, 0, 0)),
+		headerSpace:  fill - len(fmt.Sprintf(formatStr, count, count)),
 	}
-	// ansiFormatter.abstractFormatter = newAbstractFormatter()
 	return ansiFormatter
 }
 
 func (af *AnsiFormatter) generateHeader(hostname string) (header string) {
-	// fill := 72
-	// if len(hostname) > 72-len(af.digitFormat) {
-	// 	fill = len(hostname) + 2
-	// }
-	// digits := len(strconv.FormatInt(af.length(), 10))
-	// digits := len(strconv.FormatInt(int64(len(*HostList)), 10))
-	// formatStr := fmt.Sprintf("%%%dd / %%%dd : ", af.digits, af.digits)
-	// header += fmt.Sprintf(formatStr, af.index, af.count)
 	header += fmt.Sprintf(af.digitFormat, af.index, af.count)
-	// fillLeft := fill - len(header)
-	fillLeft := af.headerSpace
-	headerText := info.User + "@" + hostname
-	if fillLeft+6 <= len(headerText) {
-		fillLeft = len(headerText) + 6
+	headerText := hostname
+	if info.User != "" {
+		headerText = info.User + "@" + headerText
 	}
-	symCount := (fillLeft - len(headerText) - 2) / 2
+	symCount := (af.headerSpace - len(headerText) - 2) / 2
+	if symCount <= 3 {
+		symCount = 3
+	}
 	var left, right string
 	for i := 0; i < symCount; i++ {
 		left += "="
 		right += "="
 	}
 	header += left + " " + headerText + " " + right
-	// if len(header) > fill-1 {
-	// 	header = header[0 : fill-1]
-	// }
+	for i := len(header); i < fill; i++ {
+		header += "="
+	}
 	return
 }
 

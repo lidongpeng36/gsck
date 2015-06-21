@@ -7,7 +7,6 @@ import (
 )
 
 var _list HostInfoList
-var finder *hostlistFinder
 
 // RegisterHostlist used in each realization's init function
 func RegisterHostlist(builder constructor) {
@@ -98,7 +97,6 @@ func newHostlistFinder(str, prefer string) *hostlistFinder {
 
 func (finder *hostlistFinder) find() (list HostInfoList, err error) {
 	err = fmt.Errorf("Cannot Get Host List!")
-	// 	if preferHostlist == "" {
 	if finder.prefer == "" {
 		for _, hl := range finder.array {
 			list, err = hl.Get()
@@ -120,7 +118,6 @@ func (finder *hostlistFinder) find() (list HostInfoList, err error) {
 		}
 		return
 	}
-	//	hl := finder.hash[preferHostlist]
 	hl := finder.hash[finder.prefer]
 	list, err = hl.Get()
 	list = filter(list)
@@ -162,20 +159,6 @@ func filter(in HostInfoList) HostInfoList {
 	return out
 }
 
-// SetPrefer sets preferred Hostlist
-func SetPrefer(name string) (err error) {
-	if name == "" {
-		return
-	}
-	if _, ok := constructorMap[name]; ok {
-		preferHostlist = name
-	} else {
-		avail := strings.Join(Available(), ", ")
-		err = fmt.Errorf("Use `%s` to get hostlist is not implemtented. \nAvailable: %s", name, avail)
-	}
-	return
-}
-
 // Available returns all Hostlist's Name
 func Available() []string {
 	ret := make([]string, 0, len(constructorMap))
@@ -186,11 +169,18 @@ func Available() []string {
 }
 
 // GetHostList returns the final host list.
+// It'll use cache if possible.
 func GetHostList(str, prefer string) (list HostInfoList, err error) {
 	if _list != nil && len(_list) > 0 {
 		list = _list
 		return
 	}
+	list, err = GetHostListNoCache(str, prefer)
+	return
+}
+
+// GetHostListNoCache returns the final host list.
+func GetHostListNoCache(str, prefer string) (list HostInfoList, err error) {
 	if prefer != "" {
 		if _, ok := constructorMap[prefer]; !ok {
 			avail := strings.Join(Available(), ", ")
@@ -200,5 +190,6 @@ func GetHostList(str, prefer string) (list HostInfoList, err error) {
 	}
 	finder := newHostlistFinder(str, prefer)
 	list, err = finder.find()
+	_list = list
 	return
 }

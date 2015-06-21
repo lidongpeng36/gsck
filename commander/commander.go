@@ -119,6 +119,7 @@ func Init() {
 
 // GetHostList returns HostInfoList
 // @hostsArg: argument for hostlist to generate HostInfoList
+// @prefer: preferred method to get hostlist(PreferFlag)
 func GetHostList(hostsArg, prefer string) (list hostlist.HostInfoList, err error) {
 	fi, _ := os.Stdin.Stat()
 	// Read Data From Pipe
@@ -129,7 +130,7 @@ func GetHostList(hostsArg, prefer string) (list hostlist.HostInfoList, err error
 		}
 		bytes, _ := ioutil.ReadAll(os.Stdin)
 		hostsArg = string(bytes)
-		_ = hostlist.SetPrefer("string")
+		prefer = "string"
 	} else if hostsArg == "" {
 		err = fmt.Errorf("Show me the host list.")
 		return
@@ -153,7 +154,7 @@ func SetupFormatter(c *cli.Context) {
 	if exec.Data.HostInfoList == nil {
 		panic(errors.New("Cannot SetupFormatter Before Hostlist is set!"))
 	}
-	user := c.String("user")
+	user := exec.Data.User
 	formatter.SetInfo(user, int64(c.Int("concurrency")))
 	if c.Bool("json") {
 		exec.AddFormatter("merge", formatter.NewJSONFormatter())
@@ -183,10 +184,6 @@ func PrepareExecutorExceptHostlist(c *cli.Context) {
 
 // PrepareExecutor fills Executor
 func PrepareExecutor(c *cli.Context) {
-	// if err := hostlist.SetPrefer(c.String("prefer")); err != nil {
-	// 	fmt.Println(err)
-	// 	os.Exit(1)
-	// }
 	list, err := GetHostList(c.String("hosts"), c.String("prefer"))
 	if err != nil {
 		fmt.Println(err)

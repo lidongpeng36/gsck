@@ -1,15 +1,18 @@
 package commander
 
 import (
+	"errors"
 	"fmt"
 	"github.com/EvanLi/gsck/config"
 	"github.com/EvanLi/gsck/executor"
 	"github.com/EvanLi/gsck/formatter"
 	"github.com/EvanLi/gsck/hostlist"
+	"github.com/EvanLi/gsck/sig"
 	"github.com/EvanLi/gsck/util"
 	"github.com/codegangsta/cli"
 	"io/ioutil"
 	"os"
+	"runtime"
 	"strings"
 )
 
@@ -19,12 +22,13 @@ var exec *executor.Executor
 var defaultUser string
 
 func init() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	app = cli.NewApp()
 	app.Name = "gsck"
 	app.Author = "lidongpeng36@gmail.com"
-	app.Version = "1.2.1"
+	app.Version = "2.0.0"
 	app.Usage = "Execute commands on multiple machines over SSH (or other control system)"
-	commands = make([]cli.Command, 0, 2)
+	commands = make([]cli.Command, 0, 10)
 	defaultUser = config.GetString("user")
 	exec = executor.GetExecutor()
 }
@@ -113,7 +117,9 @@ func Init() {
 	setupMainCommand()
 }
 
-func getHostList(hostsArg string) (list []string, err error) {
+// GetHostList returns HostInfoList
+// @hostsArg: argument for hostlist to generate HostInfoList
+func GetHostList(hostsArg, prefer string) (list hostlist.HostInfoList, err error) {
 	fi, _ := os.Stdin.Stat()
 	// Read Data From Pipe
 	if (fi.Mode() & os.ModeCharDevice) == 0 {
@@ -128,31 +134,26 @@ func getHostList(hostsArg string) (list []string, err error) {
 		err = fmt.Errorf("Show me the host list.")
 		return
 	}
-	list, err = hostlist.GetHostList(hostsArg)
+	list, err = hostlist.GetHostList(hostsArg, prefer)
 	return
 }
 
-// PrepareExecutor fills Executor
-func PrepareExecutor(c *cli.Context) {
-	if err := hostlist.SetPrefer(c.String("prefer")); err != nil {
-		fmt.Println(err)
+// CheckCmd checks last parameter
+func CheckCmd(c *cli.Context) string {
+	if len(c.Args()) != 1 {
+		fmt.Println("Command Must Be the Last One Parameter!")
+		cli.ShowAppHelp(c)
 		os.Exit(1)
 	}
-	list, err := getHostList(c.String("hosts"))
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	var passwd string
-	if c.Bool("passwd") {
-		fmt.Printf("Password: ")
-		passwd = string(util.GetPasswd())
+	return c.Args()[0]
+}
+
+// SetupFormatter *MUST* be called after hostlist is ready
+func SetupFormatter(c *cli.Context) {
+	if exec.Data.HostInfoList == nil {
+		panic(errors.New("Cannot SetupFormatter Before Hostlist is set!"))
 	}
 	user := c.String("user")
-	if user == "" {
-		user = defaultUser
-	}
-	formatter.SetHostlist(list)
 	formatter.SetInfo(user, int64(c.Int("concurrency")))
 	if c.Bool("json") {
 		exec.AddFormatter("merge", formatter.NewJSONFormatter())
@@ -162,9 +163,38 @@ func PrepareExecutor(c *cli.Context) {
 	} else {
 		exec.AddFormatter("rt", formatter.NewAnsiFormatter())
 	}
-	exec.SetHostlist(list).SetConcurrency(int64(c.Int("concurrency")))
+}
+
+// PrepareExecutorExceptHostlist fills all fields but hostlist
+func PrepareExecutorExceptHostlist(c *cli.Context) {
+	var passwd string
+	if c.Bool("passwd") {
+		fmt.Printf("Password: ")
+		passwd = string(util.GetPasswd())
+	}
+	user := c.String("user")
+	if user == "" {
+		user = defaultUser
+	}
+	exec.SetConcurrency(int64(c.Int("concurrency")))
 	exec.SetTimeout(int64(c.Int("timeout"))).SetMethod(c.String("method"))
 	exec.SetUser(c.String("user")).SetPasswd(passwd).SetAccount(c.String("account"))
+}
+
+// PrepareExecutor fills Executor
+func PrepareExecutor(c *cli.Context) {
+	// if err := hostlist.SetPrefer(c.String("prefer")); err != nil {
+	// 	fmt.Println(err)
+	// 	os.Exit(1)
+	// }
+	list, err := GetHostList(c.String("hosts"), c.String("prefer"))
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	PrepareExecutorExceptHostlist(c)
+	exec.SetHostInfoList(list)
+	SetupFormatter(c)
 }
 
 // CheckExecutor checks errors in executor. Exit if find any.
@@ -186,5 +216,6 @@ func App() *cli.App {
 
 // Run starts gsck
 func Run() {
+	sig.Run()
 	_ = app.Run(os.Args)
 }

@@ -53,6 +53,7 @@ func getKeyFile(t string) (key ssh.Signer, err error) {
 
 type sshClient struct {
 	hostname string
+	alias    string
 	cmd      string
 	timeout  int64
 	client   *ssh.Client
@@ -141,7 +142,7 @@ func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
 
 type sshExecutor struct {
 	config  *ssh.ClientConfig
-	clients []sshClient
+	clients []*sshClient
 	data    *Data
 }
 
@@ -165,8 +166,7 @@ func (ss *sshExecutor) Name() string {
 
 func (ss *sshExecutor) Init(data *Data) error {
 	ss.data = data
-	hostlist := data.Hostlist
-	cmd := data.Cmd
+	hostinfoList := data.HostInfoList
 	authKeys := make([]ssh.Signer, 0, 2)
 	for _, t := range []string{"rsa", "dsa"} {
 		key, err := getKeyFile(t)
@@ -185,23 +185,28 @@ func (ss *sshExecutor) Init(data *Data) error {
 		User: data.User,
 		Auth: authMethod,
 	}
-	ss.clients = make([]sshClient, 0, len(hostlist))
+	ss.clients = make([]*sshClient, len(hostinfoList))
 	var transfer *TransferFile
 	if data.NeedTransferFile() {
 		transfer = data.Transfer
 	}
-	cmdFinal := ss.assembleSSHCmd(cmd)
 	retry := config.GetInt("retry")
-	for _, hostname := range hostlist {
-		client := sshClient{
+	for i, info := range hostinfoList {
+		hostname := info.Host
+		cmdFinal := ss.assembleSSHCmd(info.Cmd)
+		client := &sshClient{
 			hostname: hostname,
-			config:   ss.config,
+			alias:    info.Alias,
+			config: &ssh.ClientConfig{
+				User: info.User,
+				Auth: authMethod,
+			},
 			cmd:      cmdFinal,
 			retry:    retry,
 			transfer: transfer,
 			timeout:  data.Timeout,
 		}
-		ss.clients = append(ss.clients, client)
+		ss.clients[i] = client
 	}
 	return nil
 }
@@ -224,10 +229,12 @@ func (ss *sshExecutor) Execute() (err error) {
 		var wg sync.WaitGroup
 		for _, c := range list {
 			wg.Add(1)
-			go func(client sshClient) {
+			go func(client *sshClient) {
+				defer wg.Done()
 				stdout, stderr, rc, clientErr := client.exec()
 				output := formatter.Output{
 					Hostname: client.hostname,
+					Alias:    client.alias,
 					ExitCode: rc,
 				}
 				if clientErr == nil {
@@ -237,7 +244,6 @@ func (ss *sshExecutor) Execute() (err error) {
 					output.Error = clientErr.Error()
 				}
 				ss.data.AddOutput(output)
-				defer wg.Done()
 			}(c)
 		}
 		wg.Wait()

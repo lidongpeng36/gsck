@@ -14,7 +14,7 @@ type FromCmd struct {
 
 // Get is part of Hostlist Interface.
 // It executes cmd from @Args, and translate each line to hostname by @LineProcessor
-func (hc *FromCmd) Get() (list []string, err error) {
+func (hc *FromCmd) Get() (list HostInfoList, err error) {
 	var out []byte
 	args := hc.Args[1:]
 	out, err = exec.Command(hc.Args[0], args...).Output()
@@ -22,18 +22,18 @@ func (hc *FromCmd) Get() (list []string, err error) {
 		return
 	}
 	lines := strings.Split(string(out), "\n")
+	var stringList []string
 	if hc.LineProcessor != nil {
-		list = make([]string, 0, len(lines))
+		stringList = make([]string, 0, len(lines))
 		for _, line := range lines {
 			if line != "" {
-				for _, host := range hc.LineProcessor(line) {
-					list = append(list, host)
-				}
+				stringList = append(stringList, hc.LineProcessor(line)...)
 			}
 		}
 	} else {
-		list = lines
+		stringList = lines
 	}
+	list = MakeHostInfoListFromStringList(stringList)
 	return
 }
 

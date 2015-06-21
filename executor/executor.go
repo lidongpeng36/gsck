@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/EvanLi/gsck/formatter"
+	"github.com/EvanLi/gsck/hostlist"
+	"github.com/EvanLi/gsck/sig"
 	"github.com/EvanLi/gsck/util"
 	"io/ioutil"
 	"os"
@@ -11,6 +13,25 @@ import (
 	"path"
 	"path/filepath"
 )
+
+// log to file
+var debugLog = ""
+var _debug = false
+var logger *util.Logger
+
+func init() {
+	if debugLog != "" {
+		logger = util.NewLogger(debugLog)
+		_debug = true
+		logger.Debug("Logger's Ready!")
+	}
+}
+
+func debug(prefix, format string, v ...interface{}) {
+	if _debug {
+		logger.Log(prefix, format, v...)
+	}
+}
 
 const concurrencyRecommend int64 = 60
 
@@ -67,8 +88,9 @@ type Worker interface {
 
 // WorkerWithRecommendedConcurrency could give its recommended concurrency
 type WorkerWithRecommendedConcurrency interface {
-	// Return
-	// <= 0: Recommended Concurrency == Hostlist Length
+	// @Return
+	//   == 0: Recommended Concurrency
+	//   < 0: Hostlist Length
 	RecommendedConcurrency() int64
 	Worker
 }
@@ -106,6 +128,7 @@ type Data struct {
 	Account       string
 	Concurrency   int64
 	Hostlist      []string
+	HostInfoList  hostlist.HostInfoList
 	Timeout       int64
 	Transfer      *TransferFile
 	indexMap      map[string]int
@@ -135,7 +158,7 @@ func (data *Data) NeedTransferFile() bool {
 
 // AddOutput informs formatter with new output
 func (data *Data) AddOutput(output formatter.Output) {
-	if index, ok := data.indexMap[output.Hostname]; ok {
+	if index, ok := data.indexMap[output.Alias]; ok {
 		output.Index = index
 		data.outputChannel <- output
 	}
@@ -191,10 +214,22 @@ func (exec *Executor) SetTimeout(timeout int64) *Executor {
 }
 
 // SetHostlist sets hostlist for execution, without check or modification.
+// DEPRECATED
 func (exec *Executor) SetHostlist(list []string) *Executor {
 	exec.Data.Hostlist = list
-	for index, hostname := range list {
-		exec.Data.indexMap[hostname] = index
+	if exec.Data.HostInfoList == nil {
+		exec.SetHostInfoList(hostlist.MakeHostInfoListFromStringList(list))
+	}
+	return exec
+}
+
+func (exec *Executor) SetHostInfoList(list hostlist.HostInfoList) *Executor {
+	if list != nil {
+		for index, hi := range list {
+			exec.Data.indexMap[hi.Alias] = index
+		}
+		exec.Data.HostInfoList = list
+		formatter.SetHostInfoList(&list)
 	}
 	return exec
 }
@@ -259,9 +294,12 @@ func (exec *Executor) SetTransferHook(before, after string) *Executor {
 	return exec
 }
 
-// HostCount returns len(@Hostlist)
+// HostCount returns length of HostInfoList
 func (exec *Executor) HostCount() int {
-	return len(exec.Data.Hostlist)
+	if exec.Data.HostInfoList != nil {
+		return len(exec.Data.HostInfoList)
+	}
+	return 0
 }
 
 // Check returns all errors that comes from initialization.
@@ -275,11 +313,34 @@ func (exec *Executor) Run() (err error) {
 	count := int64(exec.HostCount())
 	if count == 0 {
 		err = errors.New("Executor cannot Run: Empty Hostlist")
+		return
 	}
 	con := exec.Data.Concurrency
 	recommendConcurrency := concurrencyRecommend
 
+	for _, hi := range exec.Data.HostInfoList {
+		if hi.Cmd == "" {
+			hi.Cmd = exec.Data.Cmd
+		}
+		if hi.User == "" {
+			hi.User = exec.Data.User
+		}
+	}
+
 	done := make(chan bool, 0)
+
+	defer func() {
+		close(done)
+		close(exec.finishChannel)
+		close(exec.Data.outputChannel)
+	}()
+
+	sig.RegisterSignalHandler("Executor", func() error {
+		exec.finishChannel <- true
+		<-done
+		return nil
+	}, 0)
+
 	go func() {
 	loop:
 		for {
@@ -328,8 +389,5 @@ func (exec *Executor) Run() (err error) {
 end:
 	exec.finishChannel <- true
 	<-done
-	close(done)
-	close(exec.finishChannel)
-	close(exec.Data.outputChannel)
 	return
 }

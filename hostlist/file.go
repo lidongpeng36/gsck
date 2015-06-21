@@ -30,7 +30,7 @@ func (hf *fromFile) Priority() int {
 }
 
 // Get reads file content, and pass it to hostlistFromString
-func (hf *fromFile) Get() (list []string, err error) {
+func (hf *fromFile) Get() (list HostInfoList, err error) {
 	fi, e := os.Lstat(hf.filepath)
 	if os.IsNotExist(e) {
 		err = fmt.Errorf("No such file: %s", hf.filepath)

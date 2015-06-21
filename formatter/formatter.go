@@ -6,7 +6,7 @@ import (
 
 var info *Info
 
-var _hostlist []string
+var HostList *hostlist.HostInfoList
 
 func init() {
 	info = new(Info)
@@ -14,11 +14,14 @@ func init() {
 
 // Output holds executor's output. And Formatter uses it for show.
 type Output struct {
-	Index    int    `json:"index"`
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	Error    string `json:"error"`
+	Index  int    `json:"index"`
+	Stdout string `json:"stdout"`
+	Stderr string `json:"stderr"`
+	Error  string `json:"error"`
+	// Hostname is the real host. Executor use this to connect.
 	Hostname string `json:"hostname"`
+	// Alias is the hostname that shown to user
+	Alias    string `json:"alias"`
 	ExitCode int    `json:"exitcode"`
 }
 
@@ -35,9 +38,9 @@ func SetInfo(user string, concurrency int64) {
 	info.Concurrency = concurrency
 }
 
-// SetHostlist sets global hostlist
-func SetHostlist(list []string) {
-	_hostlist = list
+// SetHostInfoList sets global hostlist
+func SetHostInfoList(list *hostlist.HostInfoList) {
+	HostList = list
 }
 
 // Formatter formats Output for each host.
@@ -49,25 +52,33 @@ type Formatter interface {
 }
 
 type abstractFormatter struct {
-	list  []string
-	count int64
+	aliasList []string
+	hostList  []string
+	hiList    *hostlist.HostInfoList
+	count     int64
 }
 
 func newAbstractFormatter() *abstractFormatter {
-	list := _hostlist
-	if list == nil {
-		list, _ = hostlist.GetHostList("")
-	}
-	count := int64(len(list))
+	// hiList := _hostinfoList
+	// if hiList == nil {
+	// 	hiList, _ = hostlist.GetHostList("", "")
+	// }
+	count := int64(len(*HostList))
 	abf := &abstractFormatter{
-		list:  list,
-		count: count,
+		hiList:    HostList,
+		count:     count,
+		aliasList: make([]string, count),
+		hostList:  make([]string, count),
+	}
+	for i, hi := range *HostList {
+		abf.aliasList[i] = hi.Alias
+		abf.hostList[i] = hi.Host
 	}
 	return abf
 }
 
-func (abf *abstractFormatter) hosts() []string {
-	return abf.list
+func (abf *abstractFormatter) hosts() *hostlist.HostInfoList {
+	return abf.hiList
 }
 
 func (abf *abstractFormatter) length() int64 {

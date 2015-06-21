@@ -29,8 +29,9 @@ func (hs *fromString) Priority() int {
 }
 
 // Get splits input string with /\s+|;|,/
-func (hs *fromString) Get() (list []string, err error) {
-	list = splitRegexp.Split(hs.str, -1)
+func (hs *fromString) Get() (list HostInfoList, err error) {
+	stringList := splitRegexp.Split(hs.str, -1)
+	list = MakeHostInfoListFromStringList(stringList)
 	return
 }
 

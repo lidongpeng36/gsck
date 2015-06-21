@@ -74,6 +74,15 @@ func (logger *Logger) printLog(level int, format string, v ...interface{}) {
 	logger.Printf(buffer.String(), v...)
 }
 
+// Log : arbitrary log
+func (logger *Logger) Log(prefix string, format string, v ...interface{}) {
+	var buffer bytes.Buffer
+	_, _ = buffer.WriteString("[" + prefix + "] ")
+	_, _ = buffer.WriteString(format)
+	_, _ = buffer.WriteString("\n")
+	logger.Printf(buffer.String(), v...)
+}
+
 // Trace : logger.Trace
 func (logger *Logger) Trace(format string, v ...interface{}) {
 	logger.printLog(TRACE, format, v...)

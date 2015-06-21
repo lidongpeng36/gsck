@@ -2,6 +2,7 @@ package formatter
 
 import (
 	"fmt"
+	"github.com/EvanLi/gsck/sig"
 	"github.com/EvanLi/gsck/util"
 	ui "github.com/gizak/termui"
 	tm "github.com/nsf/termbox-go"
@@ -9,7 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
+	// "time"
 )
 
 // log to file
@@ -434,7 +435,8 @@ type WindowFormatter struct {
 // NewWindowFormatter initializes a WindowFormatter, and starts it.
 func NewWindowFormatter() *WindowFormatter {
 	bf := newAbstractFormatter()
-	count := len(bf.hosts())
+	count := int(bf.length())
+
 	wf := &WindowFormatter{
 		widgets:      make(map[string]ui.GridBufferer),
 		machineCount: count,
@@ -484,8 +486,8 @@ func NewWindowFormatter() *WindowFormatter {
 	infoWidget.Border.Label = "INFO"
 	wf.widgets["info"] = infoWidget
 	// Main
-	wf.outputView = newOutputUI(bf.hosts())
-	wf.hostlistView = newHostlistUI(bf.hosts(), 0, helpWidget.Height+1)
+	wf.outputView = newOutputUI(bf.aliasList)
+	wf.hostlistView = newHostlistUI(bf.aliasList, 0, helpWidget.Height+1)
 	wf.hostlistView.addSlave(wf.outputView)
 	wf.mainViews = []scrollView{wf.hostlistView, wf.outputView}
 
@@ -576,6 +578,8 @@ func (wf *WindowFormatter) run() {
 		helpWidget.Border.Label = "HELP"
 		helpWidget.Text = usage
 	}
+	// WindowFormatter will only be used by command-line tools (such as gsck, opposite to long-stay processes),
+	// so we can happily ignore these infinite goroutine.
 	go func() {
 		for {
 			wf.event <- tm.PollEvent()
@@ -675,6 +679,11 @@ func (wf *WindowFormatter) searchBackward(nth int) {
 
 func (wf *WindowFormatter) quit() {
 	wf.terminate()
+	gauge := wf.widgets["progress"].(*ui.Gauge)
+	if gauge.Percent != 100 {
+		windowFormatterExitCode = -1
+		sig.CleanUp()
+	}
 	os.Exit(windowFormatterExitCode)
 }
 
@@ -795,15 +804,16 @@ func (wf *WindowFormatter) Add(output Output) {
 	wf.setNeedRefresh()
 }
 
-// Print waits util q/C-c if progress > 100.
+// Print waits util q/C-c.
 func (wf *WindowFormatter) Print() {
+	if windowFormatterExitCode < 0 {
+		return
+	}
 	windowFormatterExitCode = 0
 	gauge := wf.widgets["progress"].(*ui.Gauge)
 	gauge.Percent = 100
 	wf.setNeedRefresh()
-	time.Sleep(time.Second)
 	if gauge.Percent > 0 {
-		time.Sleep(20 * time.Second)
 		<-make(chan bool, 1)
 	}
 	wf.terminate()

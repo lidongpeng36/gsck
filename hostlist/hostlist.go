@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+var _list HostInfoList
+var finder *hostlistFinder
+
 // RegisterHostlist used in each realization's init function
 func RegisterHostlist(builder constructor) {
 	if constructorMap == nil {
@@ -15,11 +18,37 @@ func RegisterHostlist(builder constructor) {
 	constructorMap[name] = builder
 }
 
+// HostInfo describes a host more precisely
+type HostInfo struct {
+	User  string
+	Cmd   string
+	Index int
+	Host  string
+	Alias string
+}
+
+// HostInfoList is updated version for Hostlist
+type HostInfoList []*HostInfo
+
+// MakeHostInfoListFromStringList helps migrate old implementation.
+func MakeHostInfoListFromStringList(list []string) HostInfoList {
+	hiList := make([]*HostInfo, len(list))
+	for i, host := range list {
+		hiList[i] = &HostInfo{
+			Index: i,
+			Host:  host,
+			Alias: host,
+		}
+	}
+	return hiList
+}
+
 // Hostlist should be able to give a hostname list by a single string.
 type Hostlist interface {
 	Name() string
 	Priority() int // `0` has a higher Priority over `1`
-	Get() ([]string, error)
+	// Get() ([]string, error)
+	Get() (HostInfoList, error)
 	// if you're definitely sure that user want to use this Hostlist, return true.
 	// for example, if user gives `-f ./xxx`, then obviously that he wants use this file: ./xxx.
 	// in this case, no matter Get() method succeed or not, break.
@@ -30,7 +59,8 @@ type Hostlist interface {
 // Implementation then has the ability to filter hosts
 type WithFilter interface {
 	Hostlist
-	Filter([]string) []string
+	// Filter([]string) []string
+	Filter(HostInfoList) HostInfoList
 }
 
 // SplitString is used for split Hostlist
@@ -44,27 +74,32 @@ var preferHostlist string
 type hostlistFinder struct {
 	hash       map[string]Hostlist
 	array      []Hostlist
+	prefer     string
 	realFinder string
 }
 
-func newHostlistFinder(str string) *hostlistFinder {
+func newHostlistFinder(str, prefer string) *hostlistFinder {
 	count := len(constructorMap)
 	finder := &hostlistFinder{
-		hash:  make(map[string]Hostlist),
-		array: make([]Hostlist, 0, count),
+		hash:   make(map[string]Hostlist),
+		array:  make([]Hostlist, 0, count),
+		prefer: prefer,
 	}
 	for name, builder := range constructorMap {
 		hl := builder(str)
-		finder.hash[name] = hl
-		finder.array = append(finder.array, hl)
+		if hl != nil {
+			finder.hash[name] = hl
+			finder.array = append(finder.array, hl)
+		}
 	}
 	sort.Sort(finder)
 	return finder
 }
 
-func (finder *hostlistFinder) find() (list []string, err error) {
+func (finder *hostlistFinder) find() (list HostInfoList, err error) {
 	err = fmt.Errorf("Cannot Get Host List!")
-	if preferHostlist == "" {
+	// 	if preferHostlist == "" {
+	if finder.prefer == "" {
 		for _, hl := range finder.array {
 			list, err = hl.Get()
 			list = filter(list)
@@ -83,19 +118,19 @@ func (finder *hostlistFinder) find() (list []string, err error) {
 				break
 			}
 		}
-	} else {
-		hl := finder.hash[preferHostlist]
-		list, err = hl.Get()
-		list = filter(list)
-		if hlf, ok := hl.(WithFilter); ok {
-			list = hlf.Filter(list)
-		}
-		if err == nil && len(list) == 0 {
-			err = fmt.Errorf("List is empty.")
-		}
+		return
+	}
+	//	hl := finder.hash[preferHostlist]
+	hl := finder.hash[finder.prefer]
+	list, err = hl.Get()
+	list = filter(list)
+	if hlf, ok := hl.(WithFilter); ok {
+		list = hlf.Filter(list)
+	}
+	if err == nil && len(list) == 0 {
+		err = fmt.Errorf("List is empty.")
 	}
 	return
-
 }
 
 // Sort Interface
@@ -112,18 +147,17 @@ func (finder *hostlistFinder) Swap(i, j int) {
 	finder.array[i], finder.array[j] = finder.array[j], finder.array[i]
 }
 
-var _list []string
-var finder *hostlistFinder
-
-func filter(in []string) []string {
-	out := make([]string, 0, len(in))
+// remove duplicated/begin with '#' hosts
+func filter(in HostInfoList) HostInfoList {
+	out := make(HostInfoList, 0, len(in))
 	track := make(map[string]int)
 	for _, x := range in {
-		_, exists := track[x]
-		if x != "" && !exists && !strings.HasPrefix(x, "#") {
+		trackKey := x.Alias
+		_, exists := track[trackKey]
+		if trackKey != "" && !exists && !strings.HasPrefix(trackKey, "#") {
 			out = append(out, x)
 		}
-		track[x]++
+		track[trackKey]++
 	}
 	return out
 }
@@ -152,12 +186,19 @@ func Available() []string {
 }
 
 // GetHostList returns the final host list.
-func GetHostList(str string) (list []string, err error) {
+func GetHostList(str, prefer string) (list HostInfoList, err error) {
 	if _list != nil && len(_list) > 0 {
 		list = _list
 		return
 	}
-	finder := newHostlistFinder(str)
+	if prefer != "" {
+		if _, ok := constructorMap[prefer]; !ok {
+			avail := strings.Join(Available(), ", ")
+			err = fmt.Errorf("Use `%s` to get hostlist is not implemtented. \nAvailable: %s", prefer, avail)
+			return
+		}
+	}
+	finder := newHostlistFinder(str, prefer)
 	list, err = finder.find()
 	return
 }

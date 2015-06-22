@@ -7,14 +7,17 @@ import (
 )
 
 var _list HostInfoList
+var allAvail = make(listOfHostlist, 0, 20)
 
 // RegisterHostlist used in each realization's init function
 func RegisterHostlist(builder constructor) {
 	if constructorMap == nil {
 		constructorMap = make(map[string]constructor)
 	}
-	name := builder("").Name()
+	inst := builder("")
+	name := inst.Name()
 	constructorMap[name] = builder
+	allAvail = append(allAvail, inst)
 }
 
 // HostInfo describes a host more precisely
@@ -54,11 +57,26 @@ type Hostlist interface {
 	ShouldBreak() bool
 }
 
+type listOfHostlist []Hostlist
+
+// Sort Interface
+
+func (lol listOfHostlist) Less(i, j int) bool {
+	return lol[i].Priority() < lol[j].Priority()
+}
+
+func (lol listOfHostlist) Len() int {
+	return len(lol)
+}
+
+func (lol listOfHostlist) Swap(i, j int) {
+	lol[i], lol[j] = lol[j], lol[i]
+}
+
 // WithFilter has a Filter over Hostlist
 // Implementation then has the ability to filter hosts
 type WithFilter interface {
 	Hostlist
-	// Filter([]string) []string
 	Filter(HostInfoList) HostInfoList
 }
 
@@ -72,7 +90,7 @@ var preferHostlist string
 
 type hostlistFinder struct {
 	hash       map[string]Hostlist
-	array      []Hostlist
+	array      listOfHostlist
 	prefer     string
 	realFinder string
 }
@@ -91,7 +109,7 @@ func newHostlistFinder(str, prefer string) *hostlistFinder {
 			finder.array = append(finder.array, hl)
 		}
 	}
-	sort.Sort(finder)
+	sort.Sort(finder.array)
 	return finder
 }
 
@@ -130,20 +148,6 @@ func (finder *hostlistFinder) find() (list HostInfoList, err error) {
 	return
 }
 
-// Sort Interface
-
-func (finder *hostlistFinder) Less(i, j int) bool {
-	return finder.array[i].Priority() < finder.array[j].Priority()
-}
-
-func (finder *hostlistFinder) Len() int {
-	return len(finder.array)
-}
-
-func (finder *hostlistFinder) Swap(i, j int) {
-	finder.array[i], finder.array[j] = finder.array[j], finder.array[i]
-}
-
 // remove duplicated/begin with '#' hosts
 func filter(in HostInfoList) HostInfoList {
 	out := make(HostInfoList, 0, len(in))
@@ -161,9 +165,10 @@ func filter(in HostInfoList) HostInfoList {
 
 // Available returns all Hostlist's Name
 func Available() []string {
-	ret := make([]string, 0, len(constructorMap))
-	for name := range constructorMap {
-		ret = append(ret, name)
+	ret := make([]string, len(allAvail))
+	sort.Sort(allAvail)
+	for i, hl := range allAvail {
+		ret[i] = fmt.Sprintf("%s(%d)", hl.Name(), hl.Priority())
 	}
 	return ret
 }

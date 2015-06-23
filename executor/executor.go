@@ -114,8 +114,8 @@ type TransferFile struct {
 	Data        []byte
 	Perm        string
 	Basename    string
-	Destination string
-	Src         string
+	Destination string // Destination DIRECTORY
+	Src         string // Final Destination, Destination/Basename
 	Dst         string
 	hook        *transferHook
 }
@@ -141,7 +141,11 @@ func (data *Data) WrapCmdWithHook(cmd string) string {
 		return cmd
 	}
 	hook := data.Transfer.hook
-	return util.WrapCmd(cmd, hook.before, hook.after)
+	cmdAfter := hook.after
+	if cmdAfter != "" {
+		cmdAfter = fmt.Sprintf("cd %s && %s", data.Transfer.Destination, cmdAfter)
+	}
+	return util.WrapCmd(cmd, hook.before, cmdAfter)
 }
 
 // NeedTransferFile returns whether Worker should handle file copying.
@@ -223,6 +227,8 @@ func (exec *Executor) SetHostlist(list []string) *Executor {
 	return exec
 }
 
+// SetHostInfoList is extended version of SetHostlist.
+// Executor will adjust it at the beginning of Run, which would set correct User & Cmd.
 func (exec *Executor) SetHostInfoList(list hostlist.HostInfoList) *Executor {
 	if list != nil {
 		for index, hi := range list {
@@ -318,6 +324,7 @@ func (exec *Executor) Run() (err error) {
 	con := exec.Data.Concurrency
 	recommendConcurrency := concurrencyRecommend
 
+	// Set User & Cmd of HostInfoList
 	for _, hi := range exec.Data.HostInfoList {
 		if hi.Cmd == "" {
 			hi.Cmd = exec.Data.Cmd

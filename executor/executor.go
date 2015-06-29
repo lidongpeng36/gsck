@@ -52,6 +52,7 @@ func NewExecutor() *Executor {
 			Hostlist:      make([]string, 0, 0),
 			Concurrency:   1,
 			indexMap:      map[string]int{},
+			sentMap:       map[string]bool{},
 			outputChannel: make(chan formatter.Output, 0),
 		},
 		formatters:    make(map[string]formatter.Formatter),
@@ -132,6 +133,8 @@ type Data struct {
 	Timeout       int64
 	Transfer      *TransferFile
 	indexMap      map[string]int
+	sentMap       map[string]bool
+	failedCount   int
 	outputChannel chan formatter.Output
 }
 
@@ -162,8 +165,15 @@ func (data *Data) NeedTransferFile() bool {
 
 // AddOutput informs formatter with new output
 func (data *Data) AddOutput(output formatter.Output) {
+	if _, ok := data.sentMap[output.Alias]; ok {
+		return
+	}
+	data.sentMap[output.Alias] = true
 	if index, ok := data.indexMap[output.Alias]; ok {
 		output.Index = index
+		if output.ExitCode != 0 {
+			data.failedCount++
+		}
 		data.outputChannel <- output
 	}
 }
@@ -314,7 +324,7 @@ func (exec *Executor) Check() []error {
 }
 
 // Run will initialize and drive worker and send output to Formatter(s)
-func (exec *Executor) Run() (err error) {
+func (exec *Executor) Run() (err error, failed int) {
 
 	count := int64(exec.HostCount())
 	if count == 0 {
@@ -337,18 +347,20 @@ func (exec *Executor) Run() (err error) {
 	done := make(chan bool, 0)
 
 	defer func() {
-		close(done)
-		close(exec.finishChannel)
 		close(exec.Data.outputChannel)
+		close(exec.finishChannel)
+		close(done)
+
 	}()
 
 	sig.RegisterSignalHandler("Executor", func() error {
 		exec.finishChannel <- true
-		<-done
+		// <-done
 		return nil
 	}, 0)
 
 	go func() {
+		// countInt := int(count)
 	loop:
 		for {
 			select {
@@ -356,7 +368,13 @@ func (exec *Executor) Run() (err error) {
 				for _, fmt := range exec.formatters {
 					fmt.Add(output)
 				}
-			case <-exec.finishChannel:
+				// if len(exec.Data.sentMap) == countInt {
+				// 	break loop
+				// }
+			case _, ok := <-exec.finishChannel:
+				if !ok {
+					return
+				}
 				for _, fmt := range exec.formatters {
 					fmt.Print()
 				}
@@ -393,8 +411,15 @@ func (exec *Executor) Run() (err error) {
 		goto end
 	}
 	err = exec.Worker.Execute()
+	if err != nil {
+		return
+	}
 end:
 	exec.finishChannel <- true
 	<-done
+	failed = exec.Data.failedCount
+	if failed > 255 {
+		failed = 255
+	}
 	return
 }

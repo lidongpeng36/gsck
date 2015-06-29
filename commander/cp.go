@@ -2,10 +2,10 @@ package commander
 
 import (
 	"fmt"
-	"github.com/codegangsta/cli"
 	"github.com/EvanLi/gsck/config"
 	"github.com/EvanLi/gsck/p2p"
 	"github.com/EvanLi/gsck/util"
+	"github.com/codegangsta/cli"
 	"os"
 )
 
@@ -84,5 +84,10 @@ func scpAction(c *cli.Context) {
 		}
 	}
 	CheckExecutor()
-	exec.Run()
+	err, failed := exec.Run()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(2)
+	}
+	os.Exit(failed)
 }

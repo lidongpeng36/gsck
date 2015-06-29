@@ -17,10 +17,12 @@ func action(c *cli.Context) {
 	PrepareExecutor(c)
 	exec.SetCmd(cmd)
 	CheckExecutor()
-	err := exec.Run()
+	err, failed := exec.Run()
 	if err != nil {
 		fmt.Println("Execute Error: ", err)
+		os.Exit(2)
 	}
+	os.Exit(failed)
 }
 
 func setupMainCommand() {

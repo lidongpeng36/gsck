@@ -126,6 +126,7 @@ type Data struct {
 	User          string
 	Passwd        string
 	Cmd           string
+	Script        string
 	Account       string
 	Concurrency   int64
 	Hostlist      []string
@@ -212,6 +213,11 @@ func (exec *Executor) SetPasswd(passwd string) *Executor {
 // SetCmd sets cmd for execution, without check or modification.
 func (exec *Executor) SetCmd(cmd string) *Executor {
 	exec.Data.Cmd = cmd
+	return exec
+}
+
+func (exec *Executor) SetScript(filepath string) *Executor {
+	exec.Data.Script = filepath
 	return exec
 }
 

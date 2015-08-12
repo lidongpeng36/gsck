@@ -16,21 +16,61 @@ import (
 	"strings"
 )
 
+// Input From Pipe/HereDoc
+const (
+	PIPEEMTPY          = "_GSCK_PIPE_EMPTY"
+	PIPEUSEDBYHOSTLIST = "_GSCK_PIPE_USED_BY_HOSTLIST"
+	PIPEUSEDBYCMD      = "_GSCK_PIPE_USED_BY_CMD"
+)
+
 var app *cli.App
 var commands []cli.Command
 var exec *executor.Executor
 var defaultUser string
+var fifoString string
+
+type cmdline struct {
+	pipe     string
+	fifo     string
+	cmd      string
+	fifoFile string
+}
+
+var cl *cmdline
 
 func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	app = cli.NewApp()
 	app.Name = "gsck"
 	app.Author = "lidongpeng36@gmail.com"
-	app.Version = "2.0.0"
+	app.Version = "2.1.0"
 	app.Usage = "Execute commands on multiple machines over SSH (or other control system)"
 	commands = make([]cli.Command, 0, 10)
 	defaultUser = config.GetString("user")
 	exec = executor.GetExecutor()
+
+	cl = &cmdline{
+		pipe: PIPEEMTPY,
+		fifo: PIPEEMTPY,
+	}
+	// Read Data From Pipe/HereDoc
+	fi, _ := os.Stdin.Stat()
+	if (fi.Mode() & (os.ModeCharDevice | os.ModeDir)) == 0 {
+		bytes, _ := ioutil.ReadAll(os.Stdin)
+		cl.pipe = string(bytes)
+	}
+	// Read Data From FIFO
+	for i, arg := range os.Args {
+		if i == 0 {
+			continue
+		}
+		fii, err := os.Stat(arg)
+		if err == nil && (fii.Mode()&os.ModeNamedPipe) != 0 {
+			bytes, _ := ioutil.ReadFile(arg)
+			cl.fifo = string(bytes)
+			cl.fifoFile = arg
+		}
+	}
 }
 
 // RegisterCommand add new command to app
@@ -117,21 +157,33 @@ func Init() {
 	setupMainCommand()
 }
 
+func getPipe(used string) (data string) {
+	switch cl.pipe {
+	case PIPEEMTPY:
+		fmt.Printf("Cannot Get %s: Pipe/HereDoc Empty.\n", strings.Split(used, "USED_BY_")[1])
+	case PIPEUSEDBYHOSTLIST, PIPEUSEDBYCMD:
+		fmt.Printf("Cannot Get %s From Pipe/HereDoc since it's used by *%s*.\n", strings.Split(used, "USED_BY_")[1], strings.Split(cl.pipe, "USED_BY_")[1])
+	default:
+		data = cl.pipe
+		cl.pipe = used
+		return
+	}
+	os.Exit(1)
+	return
+}
+
 // GetHostList returns HostInfoList
 // @hostsArg: argument for hostlist to generate HostInfoList
 // @prefer: preferred method to get hostlist(PreferFlag)
 func GetHostList(hostsArg, prefer string) (list hostlist.HostInfoList, err error) {
-	fi, _ := os.Stdin.Stat()
-	// Read Data From Pipe
-	if (fi.Mode() & os.ModeCharDevice) == 0 {
-		if hostsArg != "" {
-			err = fmt.Errorf("Cannot read host list from pipe and set -f/--hosts at the same time.")
-			return
+	if hostsArg == "" {
+		if cl.fifo != PIPEEMTPY {
+			hostsArg = cl.fifo
+		} else {
+			hostsArg = getPipe(PIPEUSEDBYHOSTLIST)
 		}
-		bytes, _ := ioutil.ReadAll(os.Stdin)
-		hostsArg = string(bytes)
-		prefer = "string"
-	} else if hostsArg == "" {
+	}
+	if hostsArg == "" {
 		err = fmt.Errorf("Show me the host list.")
 		return
 	}
@@ -139,14 +191,32 @@ func GetHostList(hostsArg, prefer string) (list hostlist.HostInfoList, err error
 	return
 }
 
-// CheckCmd checks last parameter
-func CheckCmd(c *cli.Context) string {
-	if len(c.Args()) != 1 {
+// GetCmd extracts cmd from command line
+func GetCmd(c *cli.Context) (cmd string) {
+	argc := len(c.Args())
+	if argc >= 2 {
+		if cl.fifoFile == "" || argc > 2 {
+			fmt.Println("Too Many Arguments (Command Must Be the Last One Parameter) !")
+			cli.ShowAppHelp(c)
+			os.Exit(1)
+		}
+	loop:
+		for _, arg := range c.Args() {
+			if arg != cl.fifoFile {
+				cmd = arg
+				break loop
+			}
+		}
+	} else if argc == 1 && c.Args()[0] == cl.fifoFile || argc == 0 {
+		cmd = getPipe(PIPEUSEDBYCMD)
+		return
 		fmt.Println("Command Must Be the Last One Parameter!")
 		cli.ShowAppHelp(c)
 		os.Exit(1)
+	} else {
+		cmd = c.Args()[argc-1]
 	}
-	return c.Args()[0]
+	return
 }
 
 // SetupFormatter *MUST* be called after hostlist is ready

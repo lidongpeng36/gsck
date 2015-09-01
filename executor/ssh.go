@@ -2,12 +2,12 @@ package executor
 
 import (
 	"bytes"
-	"golang.org/x/crypto/ssh"
 	"errors"
 	"fmt"
 	"github.com/EvanLi/gsck/config"
 	"github.com/EvanLi/gsck/formatter"
 	"github.com/EvanLi/gsck/util"
+	"golang.org/x/crypto/ssh"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -17,6 +17,9 @@ import (
 	"sync"
 	"time"
 )
+
+var randSrc = rand.NewSource(time.Now().UnixNano())
+var randGen = rand.New(randSrc)
 
 func init() {
 	RegisterWorker(func() Worker {
@@ -79,8 +82,7 @@ func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
 		if err = <-connectError; err == nil {
 			break
 		} else if retry > 0 {
-			s1 := rand.NewSource(time.Now().UnixNano())
-			ms := s1.Int63n(1000)
+			ms := randGen.Int63n(1000)
 			if sc.client != nil {
 				_ = sc.client.Close()
 			}

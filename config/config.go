@@ -21,11 +21,11 @@ func init() {
 	_, e := os.Lstat(configPath)
 	if os.IsNotExist(e) {
 		conf = ini.Empty()
-		conf.SaveTo(configPath)
+		_ = conf.SaveTo(configPath)
 	} else {
 		conf, _ = ini.Load(configPath)
 	}
-	setDefaultFromMap(map[string]string{
+	SetDefaultFromMap(map[string]string{
 		"user":          os.Getenv("USER"),
 		"retry":         "2",
 		"method":        "ssh",
@@ -35,21 +35,22 @@ func init() {
 		"remote.tmpdir": "/tmp",
 		"json.pretty":   "true",
 	})
-	conf.SaveTo(configPath)
 	bindEnv()
 }
 
 func setDefault(raw, value string) {
 	section, key := splitKey(raw)
 	if section.Key(key).String() == "" {
-		section.NewKey(key, value)
+		_, _ = section.NewKey(key, value)
 	}
 }
 
-func setDefaultFromMap(pair map[string]string) {
+// SetDefaultFromMap could be used to override defaults by plugins
+func SetDefaultFromMap(pair map[string]string) {
 	for k, v := range pair {
 		setDefault(k, v)
 	}
+	_ = conf.SaveTo(configPath)
 }
 
 // bindEnv sets ENV GSCK_X with value of default.X
@@ -59,7 +60,7 @@ func bindEnv() {
 	hash := section.KeysHash()
 	for k, v := range hash {
 		envKey := envPrefix + "_" + strings.ToUpper(k)
-		os.Setenv(envKey, v)
+		_ = os.Setenv(envKey, v)
 	}
 }
 
@@ -102,6 +103,6 @@ func GetBool(key string) (value bool) {
 // Set writes setting to config file
 func Set(key, value string) {
 	section, sectionKey := splitKey(key)
-	section.NewKey(sectionKey, value)
-	conf.SaveTo(configPath)
+	_, _ = section.NewKey(sectionKey, value)
+	_ = conf.SaveTo(configPath)
 }

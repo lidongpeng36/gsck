@@ -56,12 +56,13 @@ func scpAction(c *cli.Context) {
 	useP2P := func() {
 		p2pMgr := p2p.GetMgr()
 		p2pMgr.SetTransfer(src, c.String("dst"))
-		p2pMgr.Mkseed()
+		_ = p2pMgr.Mkseed()
 		if p2pMgr.NeedTransferFile() {
 			remoteTmp := config.GetString("remote.tmpdir")
 			exec.SetTransfer(p2pMgr.TransferFilePath(), remoteTmp)
 		}
-		exec.SetCmd(p2pMgr.ClientCmd()).SetConcurrency(-1)
+		cmd := util.WrapCmd(p2pMgr.ClientCmd(), c.String("before"), c.String("after"))
+		exec.SetCmd(cmd).SetConcurrency(-1)
 	}
 	if !p2p.Available() {
 		useScp()

@@ -2,15 +2,15 @@ package formatter
 
 import (
 	"fmt"
-	"github.com/EvanLi/gsck/sig"
-	"github.com/EvanLi/gsck/util"
-	ui "github.com/gizak/termui"
-	tm "github.com/nsf/termbox-go"
 	"math"
 	"os"
 	"strconv"
 	"strings"
-	// "time"
+
+	"github.com/EvanLi/gsck/command"
+	"github.com/EvanLi/gsck/util"
+	ui "github.com/gizak/termui"
+	tm "github.com/nsf/termbox-go"
 )
 
 // log to file
@@ -136,7 +136,7 @@ func (mo *machineOutput) resize(height, width int) {
 	mo.lines = util.JustifyText(mo.text, width-mo.margin)
 	length := len(mo.lines)
 	height -= mo.margin
-	mo.height = mo.height
+	mo.height = height
 	mo.end = length
 	if mo.start > mo.end {
 		mo.start = mo.end - 1
@@ -682,7 +682,7 @@ func (wf *WindowFormatter) quit() {
 	gauge := wf.widgets["progress"].(*ui.Gauge)
 	if gauge.Percent != 100 {
 		windowFormatterExitCode = -1
-		sig.CleanUp()
+		command.CleanUpSignals()
 	}
 	os.Exit(windowFormatterExitCode)
 }
@@ -720,7 +720,7 @@ func (wf *WindowFormatter) kbdHandler(e tm.Event, repeat int) {
 			case 'k':
 				focusView.circularScroll(up, repeat)
 			case 'l':
-				if wf.focus+1 >= mainViewCount {
+				if wf.focus >= mainViewCount-1 {
 					wf.focus = mainViewCount - 1
 				} else {
 					wf.focus++

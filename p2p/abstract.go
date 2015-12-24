@@ -2,11 +2,11 @@ package p2p
 
 import (
 	"fmt"
-	"github.com/EvanLi/gsck/config"
-	"github.com/EvanLi/gsck/util"
 	"os"
 	"os/exec"
-	"path"
+
+	"github.com/EvanLi/gsck/util"
+	// "path"
 	"strings"
 )
 
@@ -33,8 +33,8 @@ func (ap *AbstractP2P) Name() string {
 
 // Available tests if p2p config exists
 func (ap *AbstractP2P) Available() bool {
-	ap.client = config.GetString("p2p.client")
-	ap.mkseed = config.GetString("p2p.mkseed")
+	// ap.client = config.GetString("p2p.client")
+	// ap.mkseed = config.GetString("p2p.mkseed")
 	if ap.client == "" || ap.mkseed == "" {
 		return false
 	}
@@ -49,7 +49,8 @@ func (ap *AbstractP2P) SetTransfer(src, dst string) {
 
 // TransferFilePath returns local.tmpdir/path_to_src.torrent
 func (ap *AbstractP2P) TransferFilePath() string {
-	localTmp := config.GetString("local.tmpdir")
+	// localTmp := config.GetString("local.tmpdir")
+	localTmp := "/tmp"
 	seperator := string(os.PathSeparator)
 	transSrcPath := strings.Replace(ap.src, seperator, "_", -1)
 	return localTmp + seperator + transSrcPath + ".torrent"
@@ -73,7 +74,8 @@ func (ap *AbstractP2P) NeedTransferFile() bool {
 
 // ClientCmd is `p2p.client remote.tmpdir/path_to_src.torrent`
 func (ap *AbstractP2P) ClientCmd() string {
-	torrentPath := path.Join(config.GetString("remote.tmpdir"), ap.TransferFilePath())
+	// torrentPath := path.Join(config.GetString("remote.tmpdir"), ap.TransferFilePath())
+	torrentPath := ""
 	cmd := fmt.Sprintf("%s %s", ap.client, torrentPath)
 	return cmd
 }

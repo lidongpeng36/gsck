@@ -1,7 +1,5 @@
 package p2p
 
-import ()
-
 var _p2pmgr *Mgr
 
 func init() {

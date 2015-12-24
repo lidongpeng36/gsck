@@ -2,11 +2,12 @@ package util
 
 import (
 	"fmt"
-	"golang.org/x/crypto/ssh/terminal"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 // GetPasswd Only Available in *nix OS

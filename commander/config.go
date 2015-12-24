@@ -2,13 +2,15 @@ package commander
 
 import (
 	"fmt"
-	"github.com/codegangsta/cli"
-	"github.com/EvanLi/gsck/config"
 	"os"
+
+	"github.com/EvanLi/gsck/command"
+	"github.com/EvanLi/gsck/config"
+	"github.com/codegangsta/cli"
 )
 
 func init() {
-	RegisterCommand(cli.Command{
+	command.RegisterCommand(cli.Command{
 		Name:   "config",
 		Usage:  "Get/Set Defaults [ $HOME/.gsckconfig ]",
 		Action: configAction,

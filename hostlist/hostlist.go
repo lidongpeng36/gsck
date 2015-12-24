@@ -11,7 +11,7 @@ var allAvail = make(listOfHostlist, 0, 20)
 
 // RegisterHostlist used in each realization's init function
 func RegisterHostlist(builder constructor) {
-	if constructorMap == nil {
+	if nil == constructorMap {
 		constructorMap = make(map[string]constructor)
 	}
 	inst := builder("")
@@ -115,17 +115,17 @@ func newHostlistFinder(str, prefer string) *hostlistFinder {
 
 func (finder *hostlistFinder) find() (list HostInfoList, err error) {
 	err = fmt.Errorf("Cannot Get Host List!")
-	if finder.prefer == "" {
+	if "" == finder.prefer {
 		for _, hl := range finder.array {
 			list, err = hl.Get()
 			list = filter(list)
 			if hlf, ok := hl.(WithFilter); ok {
 				list = hlf.Filter(list)
 			}
-			if err == nil && len(list) == 0 {
+			if nil == err && 0 == len(list) {
 				err = fmt.Errorf("List is empty.")
 			}
-			if err == nil {
+			if nil == err {
 				_list = list
 				finder.realFinder = hl.Name()
 				return
@@ -142,7 +142,7 @@ func (finder *hostlistFinder) find() (list HostInfoList, err error) {
 	if hlf, ok := hl.(WithFilter); ok {
 		list = hlf.Filter(list)
 	}
-	if err == nil && len(list) == 0 {
+	if nil == err && 0 == len(list) {
 		err = fmt.Errorf("List is empty.")
 	}
 	return
@@ -155,7 +155,7 @@ func filter(in HostInfoList) HostInfoList {
 	for _, x := range in {
 		trackKey := x.Alias
 		_, exists := track[trackKey]
-		if trackKey != "" && !exists && !strings.HasPrefix(trackKey, "#") {
+		if "" != trackKey && !exists && !strings.HasPrefix(trackKey, "#") {
 			out = append(out, x)
 		}
 		track[trackKey]++
@@ -176,7 +176,7 @@ func Available() []string {
 // GetHostList returns the final host list.
 // It'll use cache if possible.
 func GetHostList(str, prefer string) (list HostInfoList, err error) {
-	if _list != nil && len(_list) > 0 {
+	if nil != _list && 0 < len(_list) {
 		list = _list
 		return
 	}
@@ -186,7 +186,7 @@ func GetHostList(str, prefer string) (list HostInfoList, err error) {
 
 // GetHostListNoCache returns the final host list.
 func GetHostListNoCache(str, prefer string) (list HostInfoList, err error) {
-	if prefer != "" {
+	if "" != prefer {
 		if _, ok := constructorMap[prefer]; !ok {
 			avail := strings.Join(Available(), ", ")
 			err = fmt.Errorf("Use `%s` to get hostlist is not implemtented. \nAvailable: %s", prefer, avail)

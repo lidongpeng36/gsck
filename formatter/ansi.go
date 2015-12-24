@@ -2,8 +2,9 @@ package formatter
 
 import (
 	"fmt"
-	"github.com/mgutz/ansi"
 	"strconv"
+
+	"github.com/mgutz/ansi"
 )
 
 var ansiMute bool
@@ -54,11 +55,11 @@ func NewAnsiFormatter() *AnsiFormatter {
 func (af *AnsiFormatter) generateHeader(hostname string) (header string) {
 	header += fmt.Sprintf(af.digitFormat, af.index, af.count)
 	headerText := hostname
-	if info.User != "" {
+	if "" != info.User {
 		headerText = info.User + "@" + headerText
 	}
 	symCount := (af.headerSpace - len(headerText) - 2) / 2
-	if symCount <= 3 {
+	if 3 >= symCount {
 		symCount = 3
 	}
 	var left, right string
@@ -80,17 +81,17 @@ func (af *AnsiFormatter) Add(output Output) {
 	af.index = af.index + 1
 	header := af.generateHeader(output.Alias)
 	headerFmt := af.normalHeader
-	if info.User == "root" {
+	if "root" == info.User {
 		headerFmt = af.rootHeader
 	}
 	fmt.Println(headerFmt, header, af.reset)
-	if output.Stdout != "" {
+	if "" != output.Stdout {
 		fmt.Printf("%s%s%s\n", af.stdout, output.Stdout, af.reset)
 	}
-	if output.Stderr != "" {
+	if "" != output.Stderr {
 		fmt.Printf("%s%s%s\n", af.stderr, output.Stderr, af.reset)
 	}
-	if output.Error != "" {
+	if "" != output.Error {
 		fmt.Printf("%s%s%s\n", af.error, output.Error, af.reset)
 	}
 }

@@ -3,80 +3,25 @@ package commander
 import (
 	"errors"
 	"fmt"
-	"github.com/EvanLi/gsck/config"
+	"os"
+	"strings"
+
+	"github.com/EvanLi/gsck/command"
 	"github.com/EvanLi/gsck/executor"
 	"github.com/EvanLi/gsck/formatter"
 	"github.com/EvanLi/gsck/hostlist"
-	"github.com/EvanLi/gsck/sig"
 	"github.com/EvanLi/gsck/util"
 	"github.com/codegangsta/cli"
-	"io/ioutil"
-	"os"
-	"runtime"
-	"strings"
 )
 
 // Input From Pipe/HereDoc
 const (
-	PIPEEMTPY          = "_GSCK_PIPE_EMPTY"
-	PIPEUSEDBYHOSTLIST = "_GSCK_PIPE_USED_BY_HOSTLIST"
-	PIPEUSEDBYCMD      = "_GSCK_PIPE_USED_BY_CMD"
+	PIPEEMTPY          = ""
+	PIPEUSEDBYHOSTLIST = "_PIPE_USED_BY_HOSTLIST"
+	PIPEUSEDBYCMD      = "_PIPE_USED_BY_CMD"
 )
 
-var app *cli.App
-var commands []cli.Command
-var exec *executor.Executor
-var defaultUser string
-var fifoString string
-
-type cmdline struct {
-	pipe     string
-	fifo     string
-	cmd      string
-	fifoFile string
-}
-
-var cl *cmdline
-
-func init() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	app = cli.NewApp()
-	app.Name = "gsck"
-	app.Author = "lidongpeng36@gmail.com"
-	app.Version = "2.1.0"
-	app.Usage = "Execute commands on multiple machines over SSH (or other control system)"
-	commands = make([]cli.Command, 0, 10)
-	defaultUser = config.GetString("user")
-	exec = executor.GetExecutor()
-
-	cl = &cmdline{
-		pipe: PIPEEMTPY,
-		fifo: PIPEEMTPY,
-	}
-	// Read Data From Pipe/HereDoc
-	fi, _ := os.Stdin.Stat()
-	if (fi.Mode() & (os.ModeCharDevice | os.ModeDir)) == 0 {
-		bytes, _ := ioutil.ReadAll(os.Stdin)
-		cl.pipe = string(bytes)
-	}
-	// Read Data From FIFO
-	for i, arg := range os.Args {
-		if i == 0 {
-			continue
-		}
-		fii, err := os.Stat(arg)
-		if err == nil && (fii.Mode()&os.ModeNamedPipe) != 0 {
-			bytes, _ := ioutil.ReadFile(arg)
-			cl.fifo = string(bytes)
-			cl.fifoFile = arg
-		}
-	}
-}
-
-// RegisterCommand add new command to app
-func RegisterCommand(cmd cli.Command) {
-	commands = append(commands, cmd)
-}
+// var exec *executor.Executor
 
 // HostsFlag `-f`
 var HostsFlag = cli.StringFlag{
@@ -88,13 +33,15 @@ var HostsFlag = cli.StringFlag{
 var MethodFlag = cli.StringFlag{
 	Name:   "method, m",
 	Value:  "ssh",
-	EnvVar: "GSCK_METHOD",
+	EnvVar: "METHOD",
+	Usage:  "How to execute the commands",
 }
 
 // PreferFlag `--prefer`
 var PreferFlag = cli.StringFlag{
 	Name:   "prefer",
-	EnvVar: "GSCK_PREFER",
+	EnvVar: "PREFER",
+	Usage:  "Override default hostlist lookup chain",
 }
 
 // PasswdFlag `-p`
@@ -103,12 +50,19 @@ var PasswdFlag = cli.BoolFlag{
 	Usage: "Add Password Authentication Method",
 }
 
+// PasswordFlag `--password`
+var PasswordFlag = cli.StringFlag{
+	Name:   "password",
+	EnvVar: "PASSWORD",
+	Usage:  "Specify password in Command Line",
+}
+
 // ConcurrencyFlag `-c`
 var ConcurrencyFlag = cli.IntFlag{
 	Name:   "concurrency, c",
 	Value:  1,
 	Usage:  "Concurrency",
-	EnvVar: "GSCK_CONCURRENCY",
+	EnvVar: "CONCURRENCY",
 }
 
 // JSONFlag `-j`
@@ -121,20 +75,27 @@ var JSONFlag = cli.BoolFlag{
 var UserFlag = cli.StringFlag{
 	Name:   "user, u",
 	Usage:  "Username",
-	EnvVar: "GSCK_USER,USER",
+	EnvVar: "USER,USER",
 }
 
 // AccountFlag `--account`
 var AccountFlag = cli.StringFlag{
 	Name:   "account",
 	Usage:  "Some Executors need an Account to initiate",
-	EnvVar: "GSCK_ACCOUNT",
+	EnvVar: "ACCOUNT",
 }
 
 // TimeoutFlag `-t`
 var TimeoutFlag = cli.IntFlag{
 	Name:  "timeout, t",
 	Usage: "Timeout. Unit: s",
+	Value: 0,
+}
+
+// RetryFlag `--retry`
+var RetryFlag = cli.IntFlag{
+	Name:  "retry",
+	Usage: "Retry",
 	Value: 0,
 }
 
@@ -148,37 +109,35 @@ var WindowFlag = cli.BoolFlag{
 func Init() {
 	hostlistAvail := strings.Join(hostlist.Available(), ", ")
 	workerAvail := strings.Join(executor.Available(), ", ")
-	PreferFlag.Usage = "Override default hostlist lookup chain"
 	PreferFlag.Usage += "\n\tAnd set the only preferred method to get hostlist"
 	PreferFlag.Usage += "\n\tHostlist Methods Available: " + hostlistAvail
-	MethodFlag.Usage = "How to execute the commands"
 	MethodFlag.Usage += "\n\tExecutor Methods Available: " + workerAvail
-	app.Commands = commands
-	setupMainCommand()
 }
 
 func getPipe(used string) (data string) {
-	switch cl.pipe {
-	case PIPEEMTPY:
+	app := command.Instance()
+	switch app.Pipe {
+	case "":
 		fmt.Printf("Cannot Get %s: Pipe/HereDoc Empty.\n", strings.Split(used, "USED_BY_")[1])
 	case PIPEUSEDBYHOSTLIST, PIPEUSEDBYCMD:
-		fmt.Printf("Cannot Get %s From Pipe/HereDoc since it's used by *%s*.\n", strings.Split(used, "USED_BY_")[1], strings.Split(cl.pipe, "USED_BY_")[1])
+		fmt.Printf("Cannot Get %s From Pipe/HereDoc since it's used by *%s*.\n", strings.Split(used, "USED_BY_")[1], strings.Split(app.Pipe, "USED_BY_")[1])
 	default:
-		data = cl.pipe
-		cl.pipe = used
+		data = app.Pipe
+		app.Pipe = used
 		return
 	}
 	os.Exit(1)
 	return
 }
 
-// GetHostList returns HostInfoList
-// @hostsArg: argument for hostlist to generate HostInfoList
-// @prefer: preferred method to get hostlist(PreferFlag)
+// GetHostList gets hostlist from flag/pipe
+//   @hostsArg: argument for hostlist to generate HostInfoList
+//   @prefer: preferred method to get hostlist(PreferFlag)
 func GetHostList(hostsArg, prefer string) (list hostlist.HostInfoList, err error) {
+	app := command.Instance()
 	if hostsArg == "" {
-		if cl.fifo != PIPEEMTPY {
-			hostsArg = cl.fifo
+		if app.Fifo != "" {
+			hostsArg = app.Fifo
 		} else {
 			hostsArg = getPipe(PIPEUSEDBYHOSTLIST)
 		}
@@ -194,25 +153,23 @@ func GetHostList(hostsArg, prefer string) (list hostlist.HostInfoList, err error
 // GetCmd extracts cmd from command line
 func GetCmd(c *cli.Context) (cmd string) {
 	argc := len(c.Args())
+	app := command.Instance()
 	if argc >= 2 {
-		if cl.fifoFile == "" || argc > 2 {
+		if app.FifoFile == "" || argc > 2 {
 			fmt.Println("Too Many Arguments (Command Must Be the Last One Parameter) !")
 			cli.ShowAppHelp(c)
 			os.Exit(1)
 		}
 	loop:
 		for _, arg := range c.Args() {
-			if arg != cl.fifoFile {
+			if arg != app.FifoFile {
 				cmd = arg
 				break loop
 			}
 		}
-	} else if argc == 1 && c.Args()[0] == cl.fifoFile || argc == 0 {
+	} else if argc == 1 && c.Args()[0] == app.FifoFile || argc == 0 {
 		cmd = getPipe(PIPEUSEDBYCMD)
 		return
-		fmt.Println("Command Must Be the Last One Parameter!")
-		cli.ShowAppHelp(c)
-		os.Exit(1)
 	} else {
 		cmd = c.Args()[argc-1]
 	}
@@ -220,69 +177,64 @@ func GetCmd(c *cli.Context) (cmd string) {
 }
 
 // SetupFormatter *MUST* be called after hostlist is ready
-func SetupFormatter(c *cli.Context) {
-	if exec.Data.HostInfoList == nil {
-		panic(errors.New("Cannot SetupFormatter Before Hostlist is set!"))
+func SetupFormatter(c *cli.Context, exe *executor.Executor) (err error) {
+	if nil == exe {
+		return errors.New("Cannot SetupFormatter for nil")
 	}
-	user := exec.Data.User
+	if nil == exe.Parameter.HostInfoList {
+		return errors.New("Cannot SetupFormatter Before Hostlist is set")
+	}
+	user := exe.Parameter.User
 	formatter.SetInfo(user, int64(c.Int("concurrency")))
 	if c.Bool("json") {
-		exec.AddFormatter("merge", formatter.NewJSONFormatter())
+		exe.AddFormatter("merge", formatter.NewJSONFormatter())
 	} else if c.Bool("window") {
 		wf := formatter.NewWindowFormatter()
-		exec.AddFormatter("rt", wf)
+		exe.AddFormatter("rt", wf)
 	} else {
-		exec.AddFormatter("rt", formatter.NewAnsiFormatter())
+		exe.AddFormatter("rt", formatter.NewAnsiFormatter())
 	}
+	return
 }
 
-// PrepareExecutorExceptHostlist fills all fields but hostlist
-func PrepareExecutorExceptHostlist(c *cli.Context) {
+// SetupParameter translates cli flags into Parameter
+func SetupParameter(c *cli.Context) executor.Parameter {
 	var passwd string
+	passwd = c.String("password")
 	if c.Bool("passwd") {
 		fmt.Printf("Password: ")
 		passwd = string(util.GetPasswd())
 	}
-	user := c.String("user")
-	if user == "" {
-		user = defaultUser
+	return executor.Parameter{
+		User:        c.String("user"),
+		Passwd:      passwd,
+		Account:     c.String("account"),
+		Concurrency: int64(c.Int("concurrency")),
+		Timeout:     int64(c.Int("timeout")),
+		Method:      c.String("method"),
+		Retry:       1,
 	}
-	exec.SetConcurrency(int64(c.Int("concurrency")))
-	exec.SetTimeout(int64(c.Int("timeout"))).SetMethod(c.String("method"))
-	exec.SetUser(c.String("user")).SetPasswd(passwd).SetAccount(c.String("account"))
 }
 
 // PrepareExecutor fills Executor
-func PrepareExecutor(c *cli.Context) {
+func PrepareExecutor(c *cli.Context) *executor.Executor {
 	list, err := GetHostList(c.String("hosts"), c.String("prefer"))
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	PrepareExecutorExceptHostlist(c)
-	exec.SetHostInfoList(list)
-	SetupFormatter(c)
-}
-
-// CheckExecutor checks errors in executor. Exit if find any.
-func CheckExecutor() {
-	errs := exec.Check()
-	if len(errs) > 0 {
-		fmt.Println("Init Error:")
-		for _, e := range errs {
-			fmt.Println(e.Error())
-		}
-		os.Exit(2)
+	var exec *executor.Executor
+	exec, err = executor.NewExecutor(SetupParameter(c))
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
-}
-
-// App returns package variable app
-func App() *cli.App {
-	return app
+	exec.SetHostInfoList(list)
+	SetupFormatter(c, exec)
+	return exec
 }
 
 // Run starts gsck
-func Run() {
-	sig.Run()
-	_ = app.Run(os.Args)
+func Run() error {
+	return command.Run()
 }

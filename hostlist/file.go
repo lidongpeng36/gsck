@@ -36,19 +36,19 @@ func (hf *fromFile) Get() (list HostInfoList, err error) {
 		err = fmt.Errorf("No such file: %s", hf.filepath)
 		return
 	}
-	if e != nil {
+	if nil != e {
 		err = e
 		return
 	}
 	if fi.Mode()&os.ModeSymlink == os.ModeSymlink {
 		hf.filepath, err = filepath.EvalSymlinks(hf.filepath)
-		if err != nil {
+		if nil != err {
 			return
 		}
 	}
 	var buf []byte
 	buf, err = ioutil.ReadFile(hf.filepath)
-	if err != nil {
+	if nil != err {
 		return
 	}
 	hs := &fromString{string(buf)}

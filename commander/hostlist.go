@@ -2,15 +2,18 @@ package commander
 
 import (
 	"fmt"
-	"github.com/codegangsta/cli"
 	"os"
+
+	"github.com/EvanLi/gsck/command"
+	"github.com/codegangsta/cli"
 )
 
 func init() {
-	RegisterCommand(cli.Command{
-		Name:   "host",
-		Usage:  "Show host list",
-		Action: hostAction,
+	command.RegisterCommand(cli.Command{
+		Name:    "hostlist",
+		Aliases: []string{"hosts", "host", "hl"},
+		Usage:   "Show host list",
+		Action:  hostAction,
 		Flags: []cli.Flag{
 			PreferFlag,
 		},

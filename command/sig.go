@@ -1,4 +1,4 @@
-package sig
+package command
 
 import (
 	"container/heap"
@@ -14,10 +14,10 @@ var enable = false
 type SignalHandler func() error
 
 // RegisterSignalHandler will add @handler to signal callback list
-// @name: mark for the handler
-// @handler: callback, returns error.
-// @priority: all Handlers will run in priority order.
-//  - `0` has a higher Priority over `1`.
+//   @name: mark for the handler
+//   @handler: callback, returns error.
+//   @priority: all Handlers will run in priority order.
+//     - `0` has a higher Priority over `1`.
 func RegisterSignalHandler(name string, handler SignalHandler, priority int) {
 	if !enable {
 		return
@@ -37,28 +37,28 @@ func DisableSignalHandler(name string) {
 	shpq.Disable(name)
 }
 
-var signalChan = make(chan os.Signal, 1)
+var signalc = make(chan os.Signal, 1)
 
-// Run will subscribe to SIGINT and SIGKILL and do CleanUp if triggered
-func Run() {
+// RunSignal will subscribe to SIGINT and SIGKILL and do CleanUp if triggered
+func RunSignal() {
 	enable = true
-	signal.Notify(signalChan, os.Interrupt, os.Kill)
+	signal.Notify(signalc, os.Interrupt, os.Kill)
 	go func() {
 		select {
-		case <-signalChan:
-			CleanUp()
+		case <-signalc:
+			CleanUpSignals()
 		}
 	}()
 }
 
-// CleanUp runs all enabled handlers in priority order
-func CleanUp() {
+// CleanUpSignals runs all enabled handlers in priority order
+func CleanUpSignals() {
 	if !enable {
 		return
 	}
-	signal.Stop(signalChan)
+	signal.Stop(signalc)
 	rc := 0
-	if err := shpq.Run(); err != nil {
+	if err := shpq.Run(); nil != err {
 		rc = 2
 	}
 	os.Exit(rc)
@@ -94,7 +94,7 @@ func (pq *signalHandlerPQ) Run() (err error) {
 		if !item.enabled {
 			continue
 		}
-		if err = item.handler(); err != nil {
+		if err = item.handler(); nil != err {
 			fmt.Printf("Signal Handler %s Failed: %s\n", item.name, err.Error())
 			return
 		}

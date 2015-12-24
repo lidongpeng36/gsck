@@ -2,18 +2,20 @@ package commander
 
 import (
 	"fmt"
+	"os"
+
+	"github.com/EvanLi/gsck/command"
 	"github.com/EvanLi/gsck/config"
 	"github.com/EvanLi/gsck/p2p"
 	"github.com/EvanLi/gsck/util"
 	"github.com/codegangsta/cli"
-	"os"
 )
 
 func init() {
-	RegisterCommand(cli.Command{
-		Name:    "cp",
-		Aliases: []string{"c"},
-		Usage:   "Copy src to dst directory while keep files' perm",
+	command.RegisterCommand(cli.Command{
+		Name:    "copy",
+		Aliases: []string{"cp", "c"},
+		Usage:   "Copy src to dst directory while keep perm",
 		Flags: []cli.Flag{
 			UserFlag,
 			HostsFlag,
@@ -47,7 +49,7 @@ func init() {
 
 // CP Action (gsck cp ...)
 func scpAction(c *cli.Context) {
-	PrepareExecutor(c)
+	exec := PrepareExecutor(c)
 	src := c.String("src")
 	useScp := func() {
 		exec.SetTransfer(src, c.String("dst"))
@@ -56,13 +58,18 @@ func scpAction(c *cli.Context) {
 	useP2P := func() {
 		p2pMgr := p2p.GetMgr()
 		p2pMgr.SetTransfer(src, c.String("dst"))
-		_ = p2pMgr.Mkseed()
+		err := p2pMgr.Mkseed()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(2)
+		}
 		if p2pMgr.NeedTransferFile() {
 			remoteTmp := config.GetString("remote.tmpdir")
 			exec.SetTransfer(p2pMgr.TransferFilePath(), remoteTmp)
 		}
 		cmd := util.WrapCmd(p2pMgr.ClientCmd(), c.String("before"), c.String("after"))
-		exec.SetCmd(cmd).SetConcurrency(-1)
+		exec.Parameter.Cmd = cmd
+		exec.Parameter.Concurrency = -1
 	}
 	if !p2p.Available() {
 		useScp()
@@ -70,7 +77,7 @@ func scpAction(c *cli.Context) {
 		useP2P()
 	} else {
 		stat, err := os.Lstat(src)
-		if err != nil {
+		if nil != err {
 			fmt.Println(err)
 			os.Exit(2)
 		}
@@ -78,15 +85,14 @@ func scpAction(c *cli.Context) {
 		sizeInMB := size / 1024 / 1024
 		transferTotal := sizeInMB * int64(exec.HostCount())
 		// If transferTotal is less than 1 MB * 10 machine, use scp.
-		if transferTotal < 10 {
+		if 10 > transferTotal {
 			useScp()
 		} else {
 			useP2P()
 		}
 	}
-	CheckExecutor()
-	err, failed := exec.Run()
-	if err != nil {
+	failed, err := exec.Run()
+	if nil != err {
 		fmt.Println(err)
 		os.Exit(2)
 	}

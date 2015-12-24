@@ -3,7 +3,7 @@ package formatter
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/EvanLi/gsck/config"
+	// "gsck/config"
 )
 
 type jsonData struct {
@@ -35,9 +35,9 @@ func NewJSONFormatter() *JSONFormatter {
 // Add just collects all outputs, no prints.
 func (jf *JSONFormatter) Add(output Output) {
 	jf.data.List = append(jf.data.List, output)
-	if output.Error != "" {
+	if "" != output.Error {
 		jf.data.Summary.Error++
-	} else if output.ExitCode != 0 {
+	} else if 0 != output.ExitCode {
 		jf.data.Summary.Failed++
 	} else {
 		jf.data.Summary.Success++
@@ -48,12 +48,13 @@ func (jf *JSONFormatter) Add(output Output) {
 func (jf *JSONFormatter) Print() {
 	var enc []byte
 	var err error
-	if config.GetBool("json.pretty") {
-		enc, err = json.MarshalIndent(jf.data, "", "    ")
-	} else {
-		enc, err = json.Marshal(jf.data)
-	}
-	if err != nil {
+	// if config.GetBool("json.pretty") {
+	// 	enc, err = json.MarshalIndent(jf.data, "", "    ")
+	// } else {
+	// 	enc, err = json.Marshal(jf.data)
+	// }
+	enc, err = json.MarshalIndent(jf.data, "", "    ")
+	if nil != err {
 		fmt.Println(err)
 		return
 	}

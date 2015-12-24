@@ -4,10 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/EvanLi/gsck/config"
-	"github.com/EvanLi/gsck/formatter"
-	"github.com/EvanLi/gsck/util"
-	"golang.org/x/crypto/ssh"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -16,6 +12,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/EvanLi/gsck/formatter"
+	"github.com/EvanLi/gsck/util"
+	"golang.org/x/crypto/ssh"
 )
 
 var randSrc = rand.NewSource(time.Now().UnixNano())
@@ -141,10 +141,26 @@ func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
 	return
 }
 
+func (sc *sshClient) output() *formatter.Output {
+	stdout, stderr, rc, clientErr := sc.exec()
+	output := &formatter.Output{
+		Hostname: sc.hostname,
+		Alias:    sc.alias,
+		ExitCode: rc,
+	}
+	if clientErr == nil {
+		output.Stdout = stdout
+		output.Stderr = stderr
+	} else {
+		output.Error = clientErr.Error()
+	}
+	return output
+}
+
 type sshExecutor struct {
 	config  *ssh.ClientConfig
 	clients []*sshClient
-	data    *Data
+	data    *Parameter
 }
 
 func (ss *sshExecutor) assembleSSHCmd(cmd string) string {
@@ -165,7 +181,7 @@ func (ss *sshExecutor) Name() string {
 	return "ssh"
 }
 
-func (ss *sshExecutor) Init(data *Data) error {
+func (ss *sshExecutor) Init(data *Parameter) error {
 	ss.data = data
 	hostinfoList := data.HostInfoList
 	authKeys := make([]ssh.Signer, 0, 2)
@@ -191,7 +207,7 @@ func (ss *sshExecutor) Init(data *Data) error {
 	if data.NeedTransferFile() {
 		transfer = data.Transfer
 	}
-	retry := config.GetInt("retry")
+	retry := data.Retry
 	for i, info := range hostinfoList {
 		hostname := info.Host
 		cmdFinal := ss.assembleSSHCmd(info.Cmd)
@@ -212,42 +228,32 @@ func (ss *sshExecutor) Init(data *Data) error {
 	return nil
 }
 
-func (ss *sshExecutor) Execute() (err error) {
-	count := int64(len(ss.clients))
-	concurrency := ss.data.Concurrency
-	groups := count/concurrency + 1
-	var i int64
-	for i = 0; i < groups; i++ {
-		start := concurrency * i
-		end := start + concurrency
-		if end > count {
-			end = count
-		}
-		if start == end {
-			break
-		}
-		list := ss.clients[start:end]
+func (ss *sshExecutor) Execute(done <-chan struct{}) (<-chan *formatter.Output, <-chan error) {
+	ch := make(chan *formatter.Output)
+	errc := make(chan error)
+	go func() {
 		var wg sync.WaitGroup
-		for _, c := range list {
+		sem := make(chan bool, ss.data.Concurrency)
+		for _, c := range ss.clients {
 			wg.Add(1)
 			go func(client *sshClient) {
-				defer wg.Done()
-				stdout, stderr, rc, clientErr := client.exec()
-				output := formatter.Output{
-					Hostname: client.hostname,
-					Alias:    client.alias,
-					ExitCode: rc,
+				sem <- true
+				defer func() {
+					wg.Done()
+					<-sem
+				}()
+				select {
+				case ch <- client.output():
+				case <-done:
 				}
-				if clientErr == nil {
-					output.Stdout = stdout
-					output.Stderr = stderr
-				} else {
-					output.Error = clientErr.Error()
-				}
-				ss.data.AddOutput(output)
 			}(c)
 		}
-		wg.Wait()
-	}
-	return
+		go func() {
+			wg.Wait()
+			close(errc)
+			close(ch)
+		}()
+	}()
+	return ch, errc
+
 }

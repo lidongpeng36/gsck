@@ -1,23 +1,27 @@
 package config
 
 import (
-	"github.com/mitchellh/go-homedir"
-	"gopkg.in/ini.v1"
 	"os"
 	"path"
 	"strings"
+
+	"gopkg.in/ini.v1"
 )
 
-const configName = ".gsckconfig"
+type Setting struct {
+	Path      string
+	FileName  string
+	EnvPrefix string
+	Defaults  map[string]string
+}
+
 const defaultSection = "default"
-const envPrefix = "GSCK"
 
 var configPath string
 var conf *ini.File
 
-func init() {
-	homeDir, _ := homedir.Dir()
-	configPath = path.Join(homeDir, configName)
+func Setup(s *Setting) {
+	configPath = path.Join(s.Path, s.FileName)
 	_, e := os.Lstat(configPath)
 	if os.IsNotExist(e) {
 		conf = ini.Empty()
@@ -25,22 +29,15 @@ func init() {
 	} else {
 		conf, _ = ini.Load(configPath)
 	}
-	SetDefaultFromMap(map[string]string{
-		"user":          os.Getenv("USER"),
-		"retry":         "2",
-		"method":        "ssh",
-		"concurrency":   "1",
-		"formatter":     "ansi",
-		"local.tmpdir":  "/tmp",
-		"remote.tmpdir": "/tmp",
-		"json.pretty":   "true",
-	})
-	bindEnv()
+	if s.Defaults != nil {
+		SetDefaultFromMap(s.Defaults)
+	}
+	bindEnv(s.EnvPrefix)
 }
 
 func setDefault(raw, value string) {
 	section, key := splitKey(raw)
-	if section.Key(key).String() == "" {
+	if "" == section.Key(key).String() {
 		_, _ = section.NewKey(key, value)
 	}
 }
@@ -53,14 +50,20 @@ func SetDefaultFromMap(pair map[string]string) {
 	_ = conf.SaveTo(configPath)
 }
 
-// bindEnv sets ENV GSCK_X with value of default.X
-// Actual effect, if written in bash: export GSCK_USER=default.user
-func bindEnv() {
+// bindEnv sets ENV `prefix`_X with value of default.X
+// Actual effect, if written in bash: export prefix_VAR=default.VAR
+func bindEnv(prefix string) {
 	section := conf.Section(defaultSection)
 	hash := section.KeysHash()
 	for k, v := range hash {
-		envKey := envPrefix + "_" + strings.ToUpper(k)
-		_ = os.Setenv(envKey, v)
+		envKey := strings.ToUpper(k)
+		if "" != prefix {
+			envKey = prefix + "_" + envKey
+		}
+		if "" == os.Getenv(envKey) {
+			_ = os.Setenv(envKey, v)
+
+		}
 	}
 }
 
@@ -68,7 +71,7 @@ func splitKey(raw string) (section *ini.Section, key string) {
 	fields := strings.Split(raw, ".")
 	length := len(fields)
 	sectionName := defaultSection
-	if length > 1 {
+	if 1 < length {
 		sectionName = fields[0]
 	}
 	section = conf.Section(sectionName)
@@ -77,7 +80,6 @@ func splitKey(raw string) (section *ini.Section, key string) {
 }
 
 // GetString returns string value for key
-// Example: default.user
 func GetString(key string) (value string) {
 	section, sectionKey := splitKey(key)
 	value = strings.TrimSpace(section.Key(sectionKey).String())
@@ -85,7 +87,6 @@ func GetString(key string) (value string) {
 }
 
 // GetInt returns int value for key
-// Example: default.retry
 func GetInt(key string) (value int) {
 	section, sectionKey := splitKey(key)
 	value, _ = section.Key(sectionKey).Int()
@@ -93,7 +94,6 @@ func GetInt(key string) (value int) {
 }
 
 // GetBool returns bool value for key
-// Example: json.pretty
 func GetBool(key string) (value bool) {
 	section, sectionKey := splitKey(key)
 	value, _ = section.Key(sectionKey).Bool()

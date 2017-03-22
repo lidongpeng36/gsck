@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/EvanLi/gsck/command"
-	"github.com/EvanLi/gsck/config"
-	"github.com/EvanLi/gsck/p2p"
-	"github.com/EvanLi/gsck/util"
+	"github.com/lidongpeng36/gsck/command"
+	"github.com/lidongpeng36/gsck/config"
+	"github.com/lidongpeng36/gsck/p2p"
+	"github.com/lidongpeng36/gsck/util"
 	"github.com/codegangsta/cli"
 )
 

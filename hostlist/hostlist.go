@@ -26,6 +26,7 @@ type HostInfo struct {
 	Cmd   string
 	Index int
 	Host  string
+	Port  string
 	Alias string
 }
 
@@ -36,10 +37,18 @@ type HostInfoList []*HostInfo
 func MakeHostInfoListFromStringList(list []string) HostInfoList {
 	hiList := make([]*HostInfo, len(list))
 	for i, host := range list {
+		port := "22"
+		hostname := host
+		hostFields := strings.Split(host, ":")
+		if len(hostFields) > 1 {
+			port = hostFields[1]
+			hostname = hostFields[0]
+		}
 		hiList[i] = &HostInfo{
 			Index: i,
-			Host:  host,
-			Alias: host,
+			Host:  hostname,
+			Port:  port,
+			Alias: hostname,
 		}
 	}
 	return hiList

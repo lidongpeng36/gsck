@@ -5,7 +5,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/EvanLi/gsck/config"
+	"github.com/lidongpeng36/gsck/config"
 	"github.com/codegangsta/cli"
 	"github.com/mitchellh/go-homedir"
 )

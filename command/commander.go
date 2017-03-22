@@ -74,6 +74,7 @@ func Instance() *App {
 	return app
 }
 
+// Change Env Flag for cli. e.g. USER -> GSCK_USER
 func changeFlagEnv(env string, flags *[]cli.Flag) {
 	if nil != flags {
 		for i := range *flags {
@@ -96,7 +97,7 @@ func changeFlagEnv(env string, flags *[]cli.Flag) {
 
 }
 
-func bindEnvPrefix(env string, commands *[]cli.Command) {
+func bindEnvPrefix(env string, commands *cli.Commands) {
 	for i := range *commands {
 		ptr := &(*commands)[i]
 		subs := &ptr.Subcommands
@@ -107,7 +108,21 @@ func bindEnvPrefix(env string, commands *[]cli.Command) {
 		if nil != flags {
 			changeFlagEnv(env, flags)
 		}
+	}
+}
 
+// work around
+func appBindEnvPrefix(env string, commands *[]cli.Command) {
+	for i := range *commands {
+		ptr := &(*commands)[i]
+		subs := &ptr.Subcommands
+		flags := &ptr.Flags
+		if nil != subs {
+			bindEnvPrefix(env, subs)
+		}
+		if nil != flags {
+			changeFlagEnv(env, flags)
+		}
 	}
 }
 
@@ -118,7 +133,7 @@ func Run() error {
 	EnvPrefix = strings.ToUpper(EnvPrefix)
 	app.Commands = commandInUse
 	if "" != EnvPrefix {
-		bindEnvPrefix(EnvPrefix, &app.Commands)
+		appBindEnvPrefix(EnvPrefix, &(app.Commands))
 		changeFlagEnv(EnvPrefix, &app.Flags)
 	}
 	RunSignal()

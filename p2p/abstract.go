@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/EvanLi/gsck/util"
+	"github.com/lidongpeng36/gsck/util"
 	// "path"
 	"strings"
 )

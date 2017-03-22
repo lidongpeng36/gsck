@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/EvanLi/gsck/command"
-	"github.com/EvanLi/gsck/commander"
-	"github.com/EvanLi/gsck/config"
+	"github.com/lidongpeng36/gsck/command"
+	"github.com/lidongpeng36/gsck/commander"
+	"github.com/lidongpeng36/gsck/config"
 	"github.com/codegangsta/cli"
 )
 
@@ -35,7 +35,7 @@ func init() {
 	app := command.Instance()
 	app.Name = "gsck"
 	app.Authors = []cli.Author{cli.Author{Name: "Li Dongpeng", Email: "lidongpeng36@gmail.com"}}
-	app.Version = "3.0.0"
+	app.Version = "4.0.0"
 	app.Usage = "Execute commands on multiple machines over SSH (or other control system)"
 	command.EnvPrefix = envPrefix
 }

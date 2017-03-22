@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/EvanLi/fc/command"
+	"github.com/lidongpeng36/fc/command"
 	"github.com/codegangsta/cli"
 )
 

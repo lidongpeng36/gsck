@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/EvanLi/gsck/command"
+	"github.com/lidongpeng36/gsck/command"
 	"github.com/codegangsta/cli"
 )
 

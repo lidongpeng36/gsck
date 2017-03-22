@@ -9,9 +9,9 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/EvanLi/gsck/formatter"
-	"github.com/EvanLi/gsck/hostlist"
-	"github.com/EvanLi/gsck/util"
+	"github.com/lidongpeng36/gsck/formatter"
+	"github.com/lidongpeng36/gsck/hostlist"
+	"github.com/lidongpeng36/gsck/util"
 )
 
 func debug(prefix, format string, v ...interface{}) {

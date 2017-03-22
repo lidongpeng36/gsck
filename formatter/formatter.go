@@ -1,7 +1,7 @@
 package formatter
 
 import (
-	"github.com/EvanLi/gsck/hostlist"
+	"github.com/lidongpeng36/gsck/hostlist"
 )
 
 var info *Info

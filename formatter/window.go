@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EvanLi/gsck/command"
-	"github.com/EvanLi/gsck/util"
 	ui "github.com/gizak/termui"
+	"github.com/lidongpeng36/gsck/command"
+	"github.com/lidongpeng36/gsck/util"
 	tm "github.com/nsf/termbox-go"
 )
 
@@ -162,7 +162,7 @@ func newOutputUI(hosts []string) *outputUI {
 		needResize: true,
 		List:       ui.NewList(),
 	}
-	oui.Border.Label = "OUTPUT"
+	oui.BorderLabel = "OUTPUT"
 	for i := 0; i < len(hosts); i++ {
 		mo := &machineOutput{
 			margin: 2,
@@ -256,11 +256,11 @@ func newHostlistUI(hosts []string, shiftX, shiftY int) *hostlistUI {
 	arrow.Height = 1
 	arrow.X = shiftX + 2
 	arrow.TextFgColor = ui.ColorCyan
-	arrow.HasBorder = false
+	arrow.Border = false
 
 	hui.arrow = arrow
 	container := ui.NewPar("")
-	container.Border.Label = "HOSTS"
+	container.BorderLabel = "HOSTS"
 	hui.Par = container
 
 	digits := len(strconv.FormatInt(int64(count), 10))
@@ -270,7 +270,7 @@ func newHostlistUI(hosts []string, shiftX, shiftY int) *hostlistUI {
 		mPar := ui.NewPar(text)
 		mPar.Height = 1
 		mPar.Width = ui.TermWidth()/2 - 6
-		mPar.HasBorder = false
+		mPar.Border = false
 		mPar.X = shiftX + 5
 		mPar.Y = shiftY + index
 		hui.list = append(hui.list, mPar)
@@ -450,14 +450,14 @@ func NewWindowFormatter() *WindowFormatter {
 	if err != nil {
 		panic(err)
 	}
-	ui.UseTheme("helloworld")
+	// ui.UseTheme("helloworld")
 
 	// Footer
 	// help Box
 	helpWidget := ui.NewPar(usage)
 	helpWidget.Height = 3
-	helpWidget.Border.Label = "HELP"
-	helpWidget.Border.FgColor = ui.ColorCyan
+	helpWidget.BorderLabel = "HELP"
+	helpWidget.BorderFg = ui.ColorCyan
 	helpWidget.TextFgColor = ui.ColorWhite
 	wf.widgets["help"] = helpWidget
 	// Header
@@ -466,8 +466,8 @@ func NewWindowFormatter() *WindowFormatter {
 	gauge := ui.NewGauge()
 	gauge.Height = headerHeight
 	gauge.Percent = 0
-	gauge.Border.Label = "PROGRESS"
-	gauge.Border.FgColor = ui.ColorCyan
+	gauge.BorderLabel = "PROGRESS"
+	gauge.BorderFg = ui.ColorCyan
 	gauge.BarColor = ui.ColorGreen
 	wf.widgets["progress"] = gauge
 	// info Textbox
@@ -475,15 +475,15 @@ func NewWindowFormatter() *WindowFormatter {
 	infoWidget := ui.NewPar(infoText)
 	infoWidget.Height = headerHeight
 	if info.User == "root" {
-		infoWidget.Border.FgColor = ui.ColorRed
+		infoWidget.BorderFg = ui.ColorRed
 		infoWidget.TextFgColor = ui.ColorRed
-		infoWidget.Border.LabelFgColor = ui.ColorRed
+		infoWidget.BorderLabelFg = ui.ColorRed
 	} else {
-		infoWidget.Border.FgColor = ui.ColorCyan
+		infoWidget.BorderFg = ui.ColorCyan
 		infoWidget.TextFgColor = ui.ColorGreen
 		infoWidget.TextBgColor = ui.ColorBlack
 	}
-	infoWidget.Border.Label = "INFO"
+	infoWidget.BorderLabel = "INFO"
 	wf.widgets["info"] = infoWidget
 	// Main
 	wf.outputView = newOutputUI(bf.aliasList)
@@ -575,7 +575,7 @@ func (wf *WindowFormatter) run() {
 	resetPrefix := func() {
 		leaderKey = ""
 		args = ""
-		helpWidget.Border.Label = "HELP"
+		helpWidget.BorderLabel = "HELP"
 		helpWidget.Text = usage
 	}
 	// WindowFormatter will only be used by command-line tools (such as gsck, opposite to long-stay processes),
@@ -615,7 +615,7 @@ func (wf *WindowFormatter) run() {
 				} else if _, ok := leaderHandlers[input]; ok {
 					// No leader, but input is leader
 					leaderKey = input
-					helpWidget.Border.Label = "Cancel with `Esc`"
+					helpWidget.BorderLabel = "Cancel with `Esc`"
 					helpWidget.Text = leaderKey
 				} else {
 					// No leader, and input is not leader
@@ -761,9 +761,9 @@ func (wf *WindowFormatter) refresh() {
 	for i, v := range wf.mainViews {
 		view := v.block()
 		if i == wf.focus {
-			view.Border.FgColor = ui.ColorRed
+			view.BorderFg = ui.ColorRed
 		} else {
-			view.Border.FgColor = ui.ColorWhite
+			view.BorderFg = ui.ColorWhite
 		}
 		v.resize()
 		v.beforeRender()

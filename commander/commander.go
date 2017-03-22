@@ -6,11 +6,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/EvanLi/gsck/command"
-	"github.com/EvanLi/gsck/executor"
-	"github.com/EvanLi/gsck/formatter"
-	"github.com/EvanLi/gsck/hostlist"
-	"github.com/EvanLi/gsck/util"
+	"github.com/lidongpeng36/gsck/command"
+	"github.com/lidongpeng36/gsck/executor"
+	"github.com/lidongpeng36/gsck/formatter"
+	"github.com/lidongpeng36/gsck/hostlist"
+	"github.com/lidongpeng36/gsck/util"
 	"github.com/codegangsta/cli"
 )
 

@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/EvanLi/gsck/formatter"
-	"github.com/EvanLi/gsck/util"
+	"github.com/lidongpeng36/gsck/formatter"
+	"github.com/lidongpeng36/gsck/util"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -55,6 +55,7 @@ func getKeyFile(t string) (key ssh.Signer, err error) {
 type sshClient struct {
 	hostname string
 	alias    string
+	port     string
 	cmd      string
 	timeout  int64
 	client   *ssh.Client
@@ -70,7 +71,7 @@ func (sc sshClient) exec() (stdout, stderr string, rc int, err error) {
 		connectError := make(chan error, 0)
 		go func() {
 			var _err error
-			sc.client, _err = ssh.Dial("tcp", sc.hostname+":22", sc.config)
+			sc.client, _err = ssh.Dial("tcp", sc.hostname+":"+sc.port, sc.config)
 			connectError <- _err
 		}()
 		go func() {
@@ -214,6 +215,7 @@ func (ss *sshExecutor) Init(data *Parameter) error {
 		client := &sshClient{
 			hostname: hostname,
 			alias:    info.Alias,
+			port:     info.Port,
 			config: &ssh.ClientConfig{
 				User: info.User,
 				Auth: authMethod,

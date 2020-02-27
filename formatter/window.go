@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	ui "github.com/gizak/termui"
+	ui "gopkg.in/gizak/termui.v2"
 	"github.com/lidongpeng36/gsck/command"
 	"github.com/lidongpeng36/gsck/util"
 	tm "github.com/nsf/termbox-go"

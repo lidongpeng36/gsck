@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/lidongpeng36/gsck/command"
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 )
 
 func init() {

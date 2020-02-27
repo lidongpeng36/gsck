@@ -7,7 +7,7 @@ import (
 	"github.com/lidongpeng36/gsck/command"
 	"github.com/lidongpeng36/gsck/commander"
 	"github.com/lidongpeng36/gsck/config"
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 )
 
 var envPrefix = "GSCK"

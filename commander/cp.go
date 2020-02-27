@@ -8,7 +8,7 @@ import (
 	"github.com/lidongpeng36/gsck/config"
 	"github.com/lidongpeng36/gsck/p2p"
 	"github.com/lidongpeng36/gsck/util"
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 )
 
 func init() {

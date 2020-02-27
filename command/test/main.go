@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/lidongpeng36/fc/command"
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 )
 
 func init() {

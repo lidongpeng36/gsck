@@ -11,7 +11,7 @@ import (
 	"github.com/lidongpeng36/gsck/formatter"
 	"github.com/lidongpeng36/gsck/hostlist"
 	"github.com/lidongpeng36/gsck/util"
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 )
 
 // Input From Pipe/HereDoc

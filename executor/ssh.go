@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -202,6 +203,9 @@ func (ss *sshExecutor) Init(data *Parameter) error {
 	ss.config = &ssh.ClientConfig{
 		User: data.User,
 		Auth: authMethod,
+		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			return nil
+		},
 	}
 	ss.clients = make([]*sshClient, len(hostinfoList))
 	var transfer *TransferFile
@@ -219,6 +223,9 @@ func (ss *sshExecutor) Init(data *Parameter) error {
 			config: &ssh.ClientConfig{
 				User: info.User,
 				Auth: authMethod,
+				HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+					return nil
+				},
 			},
 			cmd:      cmdFinal,
 			retry:    retry,
